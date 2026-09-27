@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#0f2e33"/>
+      <stop offset="45%" stop-color="#081c20"/>
+      <stop offset="100%" stop-color="#040a0c"/>
+    </radialGradient>
+    <radialGradient id="coreGrad" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="10%" stop-color="#f0fffb"/>
+      <stop offset="30%" stop-color="#00ffc8"/>
+      <stop offset="65%" stop-color="#00d4aa"/>
+      <stop offset="100%" stop-color="#0077b6"/>
+    </radialGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="30%" x2="100%" y2="70%">
+      <stop offset="0%" stop-color="#00ffc8" stop-opacity="0.95"/>
+      <stop offset="50%" stop-color="#00d4aa" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#0096c7" stop-opacity="0.7"/>
+    </linearGradient>
+    <clipPath id="sqClip">
+      <rect x="32" y="32" width="448" height="448" rx="112"/>
+    </clipPath>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#bgGrad)"/>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="none" stroke="#00d4aa" stroke-width="1.5" stroke-opacity="0.1"/>
+  <g clip-path="url(#sqClip)">
+    <ellipse cx="256" cy="256" rx="195" ry="65" fill="none" stroke="url(#ringGrad)" stroke-width="8" stroke-linecap="round" transform="rotate(-22 256 256)"/>
+    <circle cx="256" cy="256" r="75" fill="url(#coreGrad)"/>
+    <ellipse cx="238" cy="238" rx="28" ry="20" fill="white" fill-opacity="0.45"/>
+    <ellipse cx="246" cy="245" rx="12" ry="8" fill="white" fill-opacity="0.3"/>
+  </g>
+  <ellipse cx="185" cy="70" rx="110" ry="28" fill="white" fill-opacity="0.05"/>
+</svg>

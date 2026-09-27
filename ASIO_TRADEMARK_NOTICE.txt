@@ -1,0 +1,25 @@
+ASIO® Trademark Notice — Phonon
+
+1. "ASIO" 是 Steinberg Media Technologies GmbH 的注册商标。
+   Phonon 项目及其贡献者与 Steinberg 无任何附属、赞助或背书关系。
+   ASIO® 商标仅用于描述音频设备接口兼容性，依据商标法合理使用原则。
+
+2. Phonon 发布包（Release Artifact）中不含 Steinberg ASIO SDK 的任何
+   头文件、静态库、动态库（.dll / .dylib / .so）或二进制封装：
+   - 仅随源码分发 `as_wrapper.c` / `asiosdk/common/` 等符合 Steinberg
+     ASIO SDK 最终用户协议的头包装文件；
+   - 用户若需启用 ASIO 独占模式输出，须自行从 Steinberg 官网下载
+     ASIO SDK 并在本地重新编译 Phonon（构建脚本将自动检测环境变量
+     `PHONON_ASIO_SDK_ROOT`）。
+
+3. 合规依据：
+   - Steinberg ASIO SDK License Agreement §2 "Distribution of Modified
+     or Unmodified SDK Components" — 仅允许以源码形式分发未修改的
+     SDK 头文件，禁止随二进制发布包再分发编译后的 ASIO SDK 目标码。
+   - U.S. Trademark Act §43(c)(4) 合理使用（Nominative Fair Use）
+     — 使用 "ASIO" 一词仅为描述软件功能，不得暗示 Steinberg 背书。
+
+4. 移除/替代：
+   如果您出于发行合规考虑希望完全剥离 ASIO 商标，请在编译
+   Phonon 时使用 `cargo build --no-default-features`，此时 WASAPI
+   Exclusive Mode 将作为 Windows 平台独占输出的默认路径。

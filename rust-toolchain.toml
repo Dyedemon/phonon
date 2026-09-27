@@ -1,0 +1,8 @@
+# 跨平台统一使用 stable 工具链，不绑定具体 target。
+# 各平台 CI runner 会自动用自己的 native target（Windows → msvc /
+# Linux → gnu / macOS → gnu）。
+#
+# 如果将来需要固定某个具体版本，可以改成：
+#   channel = "1.85.0"
+[toolchain]
+channel = "stable"

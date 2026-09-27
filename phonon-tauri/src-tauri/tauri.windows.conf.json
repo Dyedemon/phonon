@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "resources/phonon-uninstaller.exe": "phonon-uninstaller.exe"
+    }
+  }
+}

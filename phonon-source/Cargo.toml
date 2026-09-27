@@ -1,0 +1,18 @@
+[package]
+name = "phonon-source"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace
+log.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+phonon-codec = { path = "../phonon-codec" }
+
+# HTTP client for network streaming (TLS disabled for gcc-free builds)
+ureq = { version = "2", default-features = false, features = ["gzip"] }

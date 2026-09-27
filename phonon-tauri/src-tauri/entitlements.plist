@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS Hardened Runtime Entitlements — Phonon
+  codesign --entitlements entitlements.plist --options runtime …
+  参见：docs/superpowers/specs/2026-08-16-plugin-three-tiers-design.md §9
+  仅授予 App 运行时确实需要的最小权限集。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 网络出站：HTTP 歌词/封面 API 白名单、Tauri Updater 检查与下载 -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+
+  <!-- 用户选择的音频文件：打开/导入对话框授权后只读 -->
+  <key>com.apple.security.files.user-selected.read-only</key>
+  <true/>
+
+  <!-- 音乐库（~/.phonon_data/ / 收藏 / SQLite 媒体库 / 封面缓存）读写 -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+
+  <!-- 被拒绝时禁用：麦克风。Phonon 为纯播放 + DSP，不做录音采集。
+  <key>com.apple.security.device.audio-input</key>
+  <false/>
+  -->
+
+  <!-- 被拒绝时禁用：摄像头。
+  <key>com.apple.security.device.camera</key>
+  <false/>
+  -->
+
+  <!-- 被拒绝时禁用：AppleEvents / 控制其他进程。
+  <key>com.apple.security.automation.apple-events</key>
+  <false/>
+  -->
+
+  <!-- wasmtime 插件运行时需要 JIT 编译 WASM → 必须允许。
+       代价：Hardened Runtime 下无法走 Apple 公证（notarytool 拒绝 allow-jit），
+       目前 signingIdentity 为 null/ad-hoc 分发，不受影响；若未来要公证，
+       需把插件切换到 wasmtime 的解释器模式（pulley）后把这里改回 false。 -->
+  <key>com.apple.security.cs.disable-executable-page-protection</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

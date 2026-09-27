@@ -1,0 +1,130 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Phonon",
+  "version": "0.1.0",
+  "identifier": "com.phonon.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Phonon",
+        "width": 1100,
+        "height": 750,
+        "minWidth": 550,
+        "minHeight": 688,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": false,
+        "center": true,
+        "backgroundColor": "#05050c",
+        "devtools": false,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "deb", "appimage", "app", "dmg"],
+    "category": "Music",
+    "shortDescription": "Phonon — High-fidelity audio platform",
+    "longDescription": "纯净、跨平台、高保真、可扩展的音频应用开发平台。原生 Bit-Perfect 音频链路、插件系统与三维沉浸空间化。",
+    "copyright": "© 2026 Phonon Contributors. MIT License.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../THIRDPARTY_LICENSES.txt": "THIRDPARTY_LICENSES.txt",
+      "../../ASIO_TRADEMARK_NOTICE.txt": "ASIO_TRADEMARK_NOTICE.txt"
+    },
+    "externalBin": [],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "entitlements.plist",
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": "",
+      "signingIdentity": null
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "tsp": false,
+      "wix": {
+        "language": ["zh-CN", "en-US"],
+        "template": null
+      },
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": ["SimpChinese", "English"],
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libasound2 (>= 1.2.0)",
+          "libgtk-3-0 (>= 3.24)",
+          "libwebkit2gtk-4.1-0 (>= 2.40)",
+          "libayatana-appindicator3-1",
+          "librsvg2-2 (>= 2.50)"
+        ],
+        "desktopTemplate": null,
+        "section": "sound",
+        "priority": "optional",
+        "provides": ["phonon"],
+        "conflicts": [],
+        "replaces": []
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "cli": {
+      "description": "Phonon - High-fidelity audio player",
+      "args": [
+        {
+          "name": "file",
+          "description": "Audio file(s) to play",
+          "takesValue": true,
+          "multiple": true,
+          "index": 1
+        }
+      ]
+    },
+    "updater": {
+      "endpoints": [
+        "https://releases.phonon.app/updater.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5RjhENzVBMTNBRTRFQjcKUldTM1RxNFRXdGY0dWFFZk91TzFJMTA5ai9IZDhIeWJCclBWVWdmU2dmS20vZDFUNDBtNkdObkoK",
+      "dialog": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

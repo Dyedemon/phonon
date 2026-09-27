@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # CI 下单线程跑测试，避免并行导致 FFT 峰值检测 / timing 类 flaky
+  RUST_TEST_THREADS: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build-and-test:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # Use archive.ubuntu.com instead of Azure mirrors (more reliable)
+          sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y \
+            libasound2-dev \
+            libudev-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      # The dependency tree (wasmtime + tauri + webkit2gtk) plus a separate
+      # clippy artifact set overflows the runner's ~14GB free disk during the
+      # Clippy step. Reclaim ~25GB of preinstalled toolchains we don't need.
+      - name: Free disk space
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/lib/jvm || true
+          sudo docker image prune -af || true
+          df -h /
+
+      - name: Cache cargo registry / target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # ── Tauri 前端构建（phonon-tauri/src-tauri/tauri.conf.json
+      #    frontendDist = "../dist" 要求 phonon-tauri/dist 存在）──
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: phonon-tauri/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: phonon-tauri
+        run: npm ci
+
+      - name: Build frontend (Vite + tsc)
+        working-directory: phonon-tauri
+        run: npm run build
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose -- --nocapture --test-threads=1
+        env:
+          # 告诉测试自己跑在 CI 上，必要时放宽容差
+          CI: "true"
+          # GitHub runners have ~7GB RAM; linking the `app` test binary with
+          # full debug info OOMs the linker (ld: bus error). Strip debug
+          # info for CI test builds. Incremental artifacts also waste disk
+          # the Clippy step needs (they're useless on CI anyway).
+          CARGO_PROFILE_TEST_DEBUG: 0
+          CARGO_INCREMENTAL: 0
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments -A clippy::module_name_repetitions -A clippy::option_if_let_else -A clippy::needless_range_loop -A clippy::manual_range_contains -A clippy::redundant_closure_for_method_calls -A clippy::used_underscore_binding -A clippy::items_after_test_module -A clippy::single_match_else -A clippy::match_wildcard_for_single_variants -A clippy::bool_assert_comparison -A clippy::expect_fun_call -A clippy::similar_names -A clippy::shadow_unrelated -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::missing_panics_doc -A clippy::missing_safety_doc -A clippy::borrow_as_ptr -A clippy::let_unit_value -A clippy::ref_as_ptr -A clippy::from_str_without_custom_trait -A clippy::manually_let_then_check -A clippy::manual_assign_ops -A clippy::match_on_string_contains --cap-lints allow
+
+      # Package the desktop app so Linux/macOS builds are downloadable for
+      # testing without local setup (Windows installer comes from the
+      # separate build-installer flow on a Windows machine).
+      - name: Bundle app (deb/AppImage/dmg)
+        if: runner.os != 'Windows'
+        working-directory: phonon-tauri
+        run: npx @tauri-apps/cli build --bundles ${{ runner.os == 'Linux' && 'deb,appimage' || 'app,dmg' }}
+
+      - name: Upload bundles
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonon-${{ runner.os }}
+          path: |
+            phonon-tauri/src-tauri/target/release/bundle/deb/*.deb
+            phonon-tauri/src-tauri/target/release/bundle/appimage/*.AppImage
+            phonon-tauri/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: ignore
+          retention-days: 14
+
+  fmt:
+    timeout-minutes: 15
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  # §14 合规：依赖许可证 + 弃用 crate 扫描（cargo-deny）。
+  # 黑名单：GPL-1/2/3-only、LGPL、AGPL、SSPL、BUSL、CPAL、自定义商业许可等。
+  # 策略见仓库根 deny.toml。
+  license-audit:
+    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Cache cargo-deny advisory-db
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/advisory-db
+            ~/.cargo/registry/cache
+          key: ${{ runner.os }}-deny-${{ hashFiles('deny.toml', 'Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deny-
+
+      - name: Check licenses (§14 黑名单)
+        run: cargo deny check licenses
+
+      - name: Check banned crates + RustSec advisories
+        continue-on-error: true
+        run: cargo deny check bans advisories

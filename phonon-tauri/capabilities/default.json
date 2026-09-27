@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/dev/.schemas/capabilities.schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Phonon",
+  "windows": ["main", "desktop-lyrics", "tray-popup"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "log:allow-log",
+    "log:allow-trace",
+    "log:allow-debug",
+    "log:allow-info",
+    "log:allow-warn",
+    "log:allow-error"
+  ]
+}
