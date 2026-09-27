@@ -1,0 +1,43 @@
+// Phonon Plugin WIT Interface
+//
+// Defines the contract between the host (Phonon) and WASM plugins.
+// Plugins MUST export all functions in the `plugin` interface.
+
+interface plugin {
+    /// Initialize the plugin. Called once after loading.
+    init: func() -> result<_, string>;
+
+    /// Get the plugin name (human-readable).
+    name: func() -> string;
+
+    /// Get the plugin version.
+    version: func() -> string;
+
+    /// Get the plugin type.
+    plugin-type: func() -> plugin-type;
+
+    /// Process interleaved f32 PCM samples in-place.
+    /// `samples` is a flat interleaved buffer of f32 values.
+    /// `channels` is the number of audio channels.
+    /// `sample-rate` is the sample rate in Hz.
+    process: func(samples: list<float32>, channels: u16, sample-rate: u32) -> result<_, string>;
+
+    /// Get the processing latency introduced by this plugin (seconds).
+    latency: func() -> float64;
+}
+
+/// The type of plugin.
+enum plugin-type {
+    /// Provides audio sources (e.g., network stream, file system).
+    source,
+    /// Provides audio processing (DSP effects, filters).
+    processor,
+    /// Both source and processor capabilities.
+    hybrid,
+}
+
+/// The set of capabilities a plugin requires.
+world phonon-plugin {
+    import wasi:io/streams@0.2.0;
+    export plugin;
+}

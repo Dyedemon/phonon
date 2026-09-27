@@ -1,0 +1,8 @@
+            // ── Restore acoustic calibration state ────────────────
+            // Runs after load_session so the plugin scan has run and session
+            // restore has (re)loaded the calibration wasm if it was in use.
+            // No-op when the plugin is not installed.
+            {
+                let state = app.state::<AppState>();
+                commands::restore_calibration_state(&state);
+            }

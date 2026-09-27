@@ -1,0 +1,40 @@
+[package]
+name = "calibration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# ── Calibration WASM plugin ────────────────────────────────────────────────
+#
+# Full acoustic calibration plugin with two capabilities:
+# 1. DSP: FIR residual convolution (overlap-save, per-channel)
+# 2. Command: biquad + FIR fit computation via `plugin_command("run_fit", ...)`
+#
+# The plugin pulls FIR config from the host via the standard config version
+# polling mechanism (same as calibration-fir). Fit computation is triggered
+# by the host through `PluginRuntime::call_plugin_command`.
+#
+# Dependencies are larger than the old calibration-fir plugin (≈100 KB)
+# because we pull in rustfft + fitting maths. Target: <1.5 MB in wasm-release.
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["std"]
+std = ["calibration-engine/std", "calibration-types/std"]
+
+[dependencies]
+# Calibration engine + shared types (no native feature → no phonon-core dep)
+calibration-engine = { path = "../../crates/calibration-engine", default-features = false }
+calibration-types = { path = "../../crates/calibration-types", default-features = false }
+
+# SDK for WASM plugin ABI (declare_dsp_plugin, host imports, etc.)
+phonon-plugin-sdk = { path = "../../../phonon-plugin/phonon-plugin-sdk", default-features = false }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+# Build with: cargo build -p calibration --profile wasm-release --target wasm32-wasip1

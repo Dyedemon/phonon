@@ -1,0 +1,126 @@
+# ===== Rust / Cargo =====
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# ===== Tauri build artifacts =====
+phonon-tauri/src-tauri/target
+phonon-tauri/dist
+phonon-tauri/src-tauri/gen
+phonon-app/src-tauri/target
+phonon-app/dist
+phonon-app/src-tauri/gen
+plugins/*/target
+
+# ===== Tauri signing keys (NEVER commit these!) =====
+# .tauri/ under USERPROFILE holds private keys; also ignore any local copy
+.tauri/
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.pem
+
+# ===== Node / npm =====
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== Editors / OS =====
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Local config =====
+.env
+.env.*
+!.env.example
+
+# ===== Phonon runtime data (NEVER commit!) =====
+# Local user data: music library database, playlists, cache
+phonon-tauri/src-tauri/.phonon_data/
+**/.phonon_data/
+
+# ===== SQLite databases =====
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# ===== Test fixtures & temporary files =====
+test_*.wav
+test_*.m3u
+test_*.cue
+test_*.flac
+test_*.mp3
+test_*.ogg
+ui_test_*.png
+ui_test_*.jpg
+temp_*.py
+temp_*.rs
+temp_*.js
+temp_*.ts
+*.tmp
+
+# ===== One-off build helper scripts / wrappers =====
+gen_import_libs.py
+dlltool.bat
+as_wrapper.c
+about.hbs
+
+# ===== Chinese-named scratch files / ad-hoc temp files =====
+# (Add specific names here instead of blanket *.txt, to keep LICENSE notices)
+新建 文本文档.txt
+测试css文件.css
+
+# ===== IDE / AI assistant scratch dirs =====
+.superpowers/
+.trae/
+.trae-html-share-packages/
+
+# ===== Debug / temp output =====
+clippy_err.txt
+clippy_out.txt
+clippy_output.txt
+code-review-report.md
+code_audit_report.md
+pre_release_report.html
+phonon-tauri/ARCHITECTURE_AUDIT_REPORT.md
+phonon-tauri/debug_*.py
+phonon-tauri/debug_*.ts
+phonon-tauri/debug_results.json/
+phonon-tauri/debug_standalone_chromium.ts
+phonon-tauri/playwright-report/
+phonon-tauri/test-results/
+phonon-tauri/plugins/
+
+# ===== Workspace scratch =====
+# Track only the calibration plugin sources (cargo workspace members of the
+# root Cargo.toml); everything else under workspace/ stays local scratch.
+workspace/*
+!workspace/crates/
+!workspace/plugins/
+workspace/crates/*
+!workspace/crates/calibration-engine/
+!workspace/crates/calibration-types/
+workspace/plugins/*
+!workspace/plugins/calibration/
+!workspace/plugins/calibration-fir/
+workspace/**/target
+# Harman curve digitization scratch (measurement CSVs / screenshots) —
+# the resulting curves are already baked into calibration-engine/src/harman.rs.
+workspace/crates/calibration-engine/extraction/
+
+# ZCode tooling metadata
+.zcode/

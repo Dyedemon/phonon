@@ -1,0 +1,23 @@
+[package]
+name = "phonon-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["runtime"]
+runtime = ["dep:wasmtime"]
+
+[dependencies]
+# Workspace
+log.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# WASM (optional)
+wasmtime = { workspace = true, optional = true }
+
+# Phonon core (for trait definitions only)
+phonon-core = { path = "../phonon-core" }

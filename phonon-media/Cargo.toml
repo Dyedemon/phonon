@@ -1,0 +1,24 @@
+[package]
+name = "phonon-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Phonon media library — SQLite FTS5 indexed track/album/artist metadata with incremental scan"
+
+[dependencies]
+phonon-codec = { path = "../phonon-codec" }
+phonon-core = { path = "../phonon-core" }
+
+rusqlite = { workspace = true }
+rayon = { workspace = true }
+walkdir = { workspace = true }
+sha1 = { workspace = true }
+image = { workspace = true }
+pinyin = "0.10"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

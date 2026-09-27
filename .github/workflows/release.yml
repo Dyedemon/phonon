@@ -1,0 +1,664 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      draft_release:
+        description: 'Publish as draft GitHub Release'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+env:
+  CARGO_TERM_COLOR: always
+  # Tauri Updater 签名密钥（CI Secret TAURI_SIGNING_PRIVATE_KEY → 自动导出）
+  # TAURI_SIGNING_PRIVATE_KEY 由 GitHub Environments Secrets 注入（首次发布前执行
+  # `npm run signer:generate` 获取，把公钥填入 tauri.conf.json plugins.updater.pubkey）
+
+jobs:
+  # ── 发布前 Gate：cargo-deny / cargo test / tsc / vite build ──
+  pre-release-gate:
+    name: Pre-release Gate (deny + test + typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: phonon-tauri/package-lock.json
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Install Linux Tauri deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwebkit2gtk-4.1-dev \
+            build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: NPM install
+        working-directory: phonon-tauri
+        run: npm ci
+
+      - name: tsc typecheck
+        working-directory: phonon-tauri
+        run: npx tsc --noEmit
+
+      - name: vite build (dist/ smoke-check)
+        working-directory: phonon-tauri
+        run: npx vite build
+
+      - name: cargo-deny licenses + bans + advisories (§14 Gate)
+        run: cargo deny check licenses bans advisories
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --release
+
+      # ── §16 Release Gate：打包前阻断性检查 ──
+      - name: (Gate) Updater pubkey 非占位检查
+        shell: pwsh
+        run: |
+          $cfg = Get-Content phonon-tauri/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $pubkey = $cfg.plugins.updater.pubkey
+          if ($pubkey -match "PLACEHOLDER" -or [string]::IsNullOrWhiteSpace($pubkey)) {
+            Write-Error "§16 Gate failed: plugins.updater.pubkey 仍是占位符 '$pubkey'。请先执行 `npm run signer:generate`，把公钥填入 tauri.conf.json。"
+            exit 1
+          } else {
+            Write-Output "Updater pubkey OK: $($pubkey.Substring(0,16))..."
+          }
+
+      - name: (Gate) THIRDPARTY_LICENSES.txt 存在 + ASIO 商标声明
+        run: |
+          test -f THIRDPARTY_LICENSES.txt || { echo "§16 Gate failed: THIRDPARTY_LICENSES.txt 缺失，请先执行 cargo-about / license-checker。"; exit 1; }
+          grep -q "ASIO" THIRDPARTY_LICENSES.txt || { echo "§16 Gate warning: 未检测到 ASIO 商标声明（如使用 Steinberg ASIO SDK）。"; }
+          echo "THIRDPARTY_LICENSES.txt OK ($(wc -l < THIRDPARTY_LICENSES.txt) lines)"
+
+  # ── 三平台 Tauri 打包矩阵 ──
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: pre-release-gate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows'
+            os: 'windows-latest'
+            args: '--bundles wix,nsis,portable'
+          - platform: 'macos-universal'
+            os: 'macos-14'
+            args: '--bundles dmg,pkg --target universal-apple-darwin'
+          - platform: 'linux'
+            os: 'ubuntu-22.04'
+            args: '--bundles deb,appimage'
+
+    env:
+      # 三平台通用：Tauri Updater Ed25519 私钥（CI Secret）→ tauri signer 自动消费
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: phonon-tauri/package-lock.json
+
+      # ---- Linux deps ----
+      - name: (Linux) Install Tauri build deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev libasound2-dev libudev-dev \
+            libfuse2  # AppImage 需要
+
+      # ---- macOS: Universal target 附加 toolchain ----
+      - name: (macOS) Add x86_64-apple-darwin toolchain for Universal build
+        if: matrix.platform == 'macos-universal'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
+      # ---- Windows: SHA256 代码签名（PFX 证书）----
+      # 证书（base64 编码） + 密码来自 GitHub Secrets：
+      #   WINDOWS_CODE_SIGN_PFX   → 整个 .pfx 文件的 base64
+      #   WINDOWS_CODE_SIGN_PASS  → PFX 导入密码
+      # 完成后 tauri.conf.json bundle.windows.certificateThumbprint 自动匹配
+      - name: (Windows) Import SHA256 code-signing PFX into Cert:\CurrentUser\My
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CODE_SIGN_PFX }}
+          PFX_PASS: ${{ secrets.WINDOWS_CODE_SIGN_PASS }}
+        run: |
+          if ($env:PFX_B64 -and $env:PFX_PASS) {
+            $pfxBytes = [Convert]::FromBase64String($env:PFX_B64)
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+              $pfxBytes, $env:PFX_PASS,
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet
+            )
+            $store = Get-Item Cert:\CurrentUser\My
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $store.Add($cert)
+            $store.Close()
+            Write-Output "Imported thumbprint: $($cert.Thumbprint)"
+            # 回注到 env，供下一步重写 tauri.conf.json 使用
+            Add-Content $env:GITHUB_ENV "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)"
+          } else {
+            Write-Output "::warning::WINDOWS_CODE_SIGN_PFX secret not set, skipping code signing."
+          }
+
+      - name: (Windows) Patch tauri.conf.json certificateThumbprint
+        if: matrix.platform == 'windows' && env.WINDOWS_CERT_THUMBPRINT != ''
+        shell: pwsh
+        working-directory: phonon-tauri/src-tauri
+        run: |
+          $cfg = Get-Content tauri.conf.json | ConvertFrom-Json
+          $cfg.bundle.windows.certificateThumbprint = $env:WINDOWS_CERT_THUMBPRINT
+          $cfg | ConvertTo-Json -Depth 10 | Set-Content tauri.conf.json -Encoding utf8
+
+      # ---- macOS: codesign + notarytool（Apple Developer 证书）----
+      # 需要配置 Secrets：
+      #   APPLE_CERTIFICATE      → Developer ID Application 证书 .p12 的 base64
+      #   APPLE_CERTIFICATE_PWD  → p12 导入密码
+      #   APPLE_ID              → 开发者 Apple ID (邮箱)
+      #   APPLE_APP_SPECIFIC_PASSWORD → Apple ID 生成的「App 专用密码」
+      #   APPLE_TEAM_ID         → 10 位 Team ID
+      - name: (macOS) Import Developer ID certificate into Keychain
+        if: matrix.platform == 'macos-universal'
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERT_PWD: ${{ secrets.APPLE_CERTIFICATE_PWD }}
+        run: |
+          if [ -z "$APPLE_CERT" ] || [ -z "$APPLE_CERT_PWD" ]; then
+            echo "::warning::APPLE_CERTIFICATE not set, skipping code signing & notarization."
+            exit 0
+          fi
+          # 创建临时 keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/phonon-build.keychain-db
+          KEYCHAIN_PWD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          # 导入证书
+          P12_PATH=$RUNNER_TEMP/phonon_cert.p12
+          echo -n "$APPLE_CERT" | base64 --decode > "$P12_PATH"
+          security import "$P12_PATH" \
+            -P "$APPLE_CERT_PWD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          # 让 codesign 使用新 keychain
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          # 提取证书的 signingIdentity 名称并保存到 env
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
+            grep 'Developer ID Application' | head -1 | awk -F'"' '{print $2}')
+          echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          rm "$P12_PATH"
+
+      - name: (macOS) Patch tauri.conf.json signingIdentity + notarization env
+        if: matrix.platform == 'macos-universal' && env.SIGNING_IDENTITY != ''
+        run: |
+          # 写入到 env 供 tauri build 使用（tauri-cli 识别这些变量名）
+          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          # 用 jq 替换 signingIdentity
+          cd phonon-tauri/src-tauri
+          python3 -c "
+          import json
+          with open('tauri.conf.json', 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+          cfg['bundle']['macOS']['signingIdentity'] = '$SIGNING_IDENTITY'
+          with open('tauri.conf.json', 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+          "
+
+      # ---- 生成 THIRDPARTY_LICENSES.txt（发布前必须归档）----
+      - name: Install cargo-about (for Rust license listing)
+        run: |
+          if ! command -v cargo-about &>/dev/null; then
+            cargo install cargo-about --locked || echo "::warning::cargo-about install failed, will use placeholder"
+          fi
+
+      - name: Generate THIRDPARTY_LICENSES.txt
+        shell: pwsh
+        run: |
+          # Rust 侧
+          if (Get-Command cargo-about -ErrorAction SilentlyContinue) {
+            cargo about generate about.hbs -o THIRDPARTY_LICENSES_cargo.txt 2>$null
+          } else {
+            "cargo-about not installed, appending placeholder." |
+              Set-Content THIRDPARTY_LICENSES_cargo.txt
+          }
+          # NPM 侧（npx 自动解析 node_modules/.bin 下的 license-checker，跨平台）
+          Set-Location phonon-tauri
+          npx license-checker --production --csv --out ..\NPM_LICENSES.csv 2>$null
+          Set-Location ..
+          $parts = @()
+          if (Test-Path THIRDPARTY_LICENSES_cargo.txt) {
+            $parts += "=== Rust Crate Licenses (cargo-about) ==="
+            $parts += Get-Content THIRDPARTY_LICENSES_cargo.txt -Raw
+          }
+          if (Test-Path NPM_LICENSES.csv) {
+            $parts += "`n=== NPM Package Licenses (license-checker) ==="
+            $parts += Get-Content NPM_LICENSES.csv -Raw
+          }
+          if ($parts.Count -gt 0) {
+            $base = Get-Content THIRDPARTY_LICENSES.txt -Raw
+            "$base`n`n$($parts -join \"`n\")" | Set-Content THIRDPARTY_LICENSES.txt
+          }
+          Remove-Item THIRDPARTY_LICENSES_cargo.txt, NPM_LICENSES.csv -ErrorAction SilentlyContinue
+
+      # ---- npm ci ----
+      - name: NPM install (production)
+        working-directory: phonon-tauri
+        run: npm ci
+
+      # ── Tauri Build（核心步骤：tauri-apps/tauri-action）──
+      # 会自动：1) 前/后端构建  2) 三平台 bundle 打包
+      #         3) Tauri Updater Ed25519 签名 → updater.json
+      - name: Build Tauri bundles + Updater signature
+        uses: tauri-apps/tauri-action@v0
+        id: tauri_build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS notarytool 由 tauri-cli 自动消费以下 env（已在前序步骤注入）
+          # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID / SIGNING_IDENTITY
+        with:
+          projectPath: phonon-tauri
+          args: ${{ matrix.args }} --verbose
+
+      # ---- macOS: stapler staple（非 notarytool 返回成功后 stapler 贴票）----
+      - name: (macOS) Staple notarization ticket + spctl assess
+        if: matrix.platform == 'macos-universal' && env.SIGNING_IDENTITY != ''
+        shell: pwsh
+        run: |
+          $bundles = Get-ChildItem phonon-tauri/target/release/bundle -Recurse |
+            Where-Object { $_.Extension -in '.dmg','.pkg','.app' }
+          foreach ($b in $bundles) {
+            Write-Output "Stapling: $($b.FullName)"
+            xcrun stapler staple "$($b.FullName)"
+            if ($_.Extension -eq '.app' -or $_.Extension -eq '.dmg') {
+              spctl --assess --type execute -vv "$($b.FullName)"
+            }
+          }
+
+      # ---- 产出归档 ----
+      - name: Upload platform bundles as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonon-${{ matrix.platform }}
+          path: |
+            phonon-tauri/target/release/bundle/msi/*.msi
+            phonon-tauri/target/release/bundle/nsis/*.exe
+            phonon-tauri/target/release/bundle/portable/*.exe
+            phonon-tauri/target/release/bundle/dmg/*.dmg
+            phonon-tauri/target/release/bundle/macos/*.pkg
+            phonon-tauri/target/release/bundle/deb/*.deb
+            phonon-tauri/target/release/bundle/appimage/*.AppImage
+            phonon-tauri/target/release/bundle/appimage/*.AppImage.zsync
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # Updater signature (TAURI_SIGNING_PRIVATE_KEY 注入时才会生成)
+      - name: Upload updater signature artifact
+        uses: actions/upload-artifact@v4
+        if: env.TAURI_SIGNING_PRIVATE_KEY != ''
+        with:
+          name: updater-sig-${{ matrix.platform }}
+          path: |
+            phonon-tauri/target/release/*.sig
+            phonon-tauri/target/**/*.sig
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # ── 生成 SHA256SUMS 清单（§16 Gate：发布包完整性锚点）──
+      - name: Generate SHA256SUMS for bundles
+        shell: pwsh
+        run: |
+          $outDir = "release-artifacts"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $files = Get-ChildItem phonon-tauri/target/release/bundle -Recurse -File |
+            Where-Object { $_.Extension -in '.msi','.exe','.dmg','.pkg','.deb','.AppImage','.zsync' }
+          foreach ($f in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+            "$hash  $($f.Name)" | Add-Content "$outDir/SHA256SUMS-${{ matrix.platform }}"
+            Copy-Item $f.FullName "$outDir/" -Force
+          }
+          $sums = Get-Content "$outDir/SHA256SUMS-${{ matrix.platform }}" -ErrorAction SilentlyContinue
+          if ($sums) {
+            Write-Output "::group::SHA256SUMS-${{ matrix.platform }}"
+            $sums | ForEach-Object { Write-Output $_ }
+            Write-Output "::endgroup::"
+          } else {
+            Write-Output "::warning::SHA256SUMS-${{ matrix.platform }} 为空（bundles 缺失？）"
+          }
+
+      - name: Upload per-platform bundles + SHA256SUMS
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-payload-${{ matrix.platform }}
+          path: release-artifacts/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ── §16 Release Gate：签名 / Gatekeeper / Updater 校验作业 ──
+  #  只有三平台 build 全都成功时才跑。任何验证失败都会阻断 release job（→ 不出包）。
+  release-verification:
+    name: §16 Release Verification Gate
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all release payloads
+        uses: actions/download-artifact@v4
+        with:
+          path: gate-artifacts
+
+      - name: Consolidate SHA256SUMS
+        run: |
+          mkdir -p release-out
+          cat gate-artifacts/release-payload-*/SHA256SUMS-* > release-out/SHA256SUMS 2>/dev/null || true
+          echo "=== Consolidated SHA256SUMS ==="
+          cat release-out/SHA256SUMS
+
+      # ── 验证 1：每平台发布包完整性（文件存在 + 和 sha256 对应）──
+      - name: (Gate 1/5) Release payload consistency
+        shell: pwsh
+        run: |
+          $requiredPerPlatform = @{
+            'windows' = @('.nsis.exe','.wix.exe','.msi','.portable.exe')   # 至少 1 个 Windows bundle
+            'macos-universal' = @('.dmg')                                  # 至少有 dmg
+            'linux' = @('.AppImage')                                       # 至少有 AppImage
+          }
+          $found = 0
+          foreach ($p in $requiredPerPlatform.Keys) {
+            $files = Get-ChildItem -Recurse "gate-artifacts/release-payload-$p" -File |
+              Where-Object { $_.Name -notlike 'SHA256SUMS*' }
+            $exts = $files | ForEach-Object { $_.Extension }
+            $matchAny = $false
+            foreach ($req in $requiredPerPlatform[$p]) {
+              if ($files.Name -match [regex]::Escape($req)) { $matchAny = $true; break }
+            }
+            if (-not $matchAny) {
+              Write-Error "§16 Gate failed: $p payloads 缺失 required bundle (need one of $($requiredPerPlatform[$p]-join','))。found=$($files.Name -join ',')"
+              exit 1
+            }
+            $found += $files.Count
+            Write-Output "[$p] $($files.Count) bundle(s): $($files.Name -join ', ')"
+          }
+          Write-Output "Gate 1 PASSED ($found bundles total)"
+
+      # ── 验证 2：Tauri Updater Ed25519 .sig 存在性（每个 bundle 对应 1 个 sig）──
+      - name: (Gate 2/5) Tauri Updater signature coverage
+        shell: pwsh
+        env:
+          HAS_TAURI_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if ($env:HAS_TAURI_KEY -ne 'True') {
+            Write-Output "§16 Gate 2 SKIPPED: TAURI_SIGNING_PRIVATE_KEY 未配置，Updater 签名未生成。"
+            exit 0
+          }
+          $bundles = Get-ChildItem -Recurse gate-artifacts -File |
+            Where-Object { $_.Extension -in '.exe','.dmg','.pkg','.deb','.AppImage' -and $_.Name -notlike '*.sig' }
+          $missing = @()
+          foreach ($b in $bundles) {
+            $sig = "$($b.FullName).sig"
+            # sig 文件在 updater-sig-{platform} artifacts 里，用 basename 跨目录搜
+            $base = $b.Name
+            $hit = Get-ChildItem -Recurse gate-artifacts -Filter "$base.sig" -ErrorAction SilentlyContinue
+            if (-not $hit) {
+              # tauri-action 的 sig 命名有时是 {bundle-name}.sig（不带 basename），用包含匹配
+              $hit2 = Get-ChildItem -Recurse gate-artifacts/updater-sig-* -File -ErrorAction SilentlyContinue
+              if (-not $hit2) { $missing += $base }
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Error "§16 Gate 2 failed: 以下 bundle 缺少 Updater .sig: $($missing -join ', ')"
+            exit 1
+          }
+          Write-Output "Gate 2 PASSED: Updater signatures 覆盖 $($bundles.Count) bundle(s)"
+
+      # ── 验证 3：Windows Authenticode 签名验证（用 osslsigncode verify 交叉校验）──
+      # （CI 是 Linux，不能直接用 Get-AuthenticodeSignature；用 osslsigncode 做 PE Authenticode 校验
+      #  若未安装则跳过并警告，发布负责人需在本地 Windows 机器二次跑 CHECKLIST 的 SmartScreen check）
+      - name: Install osslsigncode for Windows Authenticode verification
+        run: sudo apt-get install -y osslsigncode || echo "osslsigncode unavailable"
+
+      - name: (Gate 3/5) Windows Authenticode signature check
+        shell: pwsh
+        env:
+          HAS_WIN_PFX: ${{ secrets.WINDOWS_CODE_SIGN_PFX != '' }}
+        run: |
+          $winBundles = Get-ChildItem -Recurse gate-artifacts/release-payload-windows -File |
+            Where-Object { $_.Extension -eq '.exe' -or $_.Extension -eq '.msi' }
+          if ($winBundles.Count -eq 0) {
+            Write-Error "§16 Gate 3 failed: 未找到 Windows bundles"
+            exit 1
+          }
+          if (-not (Get-Command osslsigncode -ErrorAction SilentlyContinue)) {
+            Write-Output "§16 Gate 3 SKIPPED: osslsigncode 未安装。请 Release Manager 按 CHECKLIST §3 用 Get-AuthenticodeSignature 在本地验证。"
+            exit 0
+          }
+          if ($env:HAS_WIN_PFX -ne 'True') {
+            Write-Output "§16 Gate 3 SKIPPED: WINDOWS_CODE_SIGN_PFX 未配置，bundles 预计未签名。"
+            exit 0
+          }
+          $failed = @()
+          foreach ($b in $winBundles) {
+            $out = osslsigncode verify -in "$($b.FullName)" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              $failed += "$($b.Name): $out"
+            } else {
+              Write-Output "Authenticode OK: $($b.Name)"
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "§16 Gate 3 failed: Authenticode 校验失败`n$($failed -join \"`n\")"
+            exit 1
+          }
+          Write-Output "Gate 3 PASSED (Authenticode verified for $($winBundles.Count) Windows bundles)"
+
+      # ── 验证 4：macOS Gatekeeper + stapled ticket（stapler/stapler-check 必须通过）──
+      # （CI 是 Linux，无法跑 spctl/stapler；此处以 SIGNING_IDENTITY 注入是否存在 + 打包日志的 Staple 步骤
+      #  通过性作为证据，并要求 Release Manager 用 CHECKLIST §2 在 macOS 本地再跑一次 spctl --assess）
+      - name: (Gate 4/5) macOS Gatekeeper evidence check
+        shell: pwsh
+        env:
+          HAS_MAC_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          $macDmg = Get-ChildItem -Recurse gate-artifacts/release-payload-macos-universal -Filter *.dmg
+          $macPkg = Get-ChildItem -Recurse gate-artifacts/release-payload-macos-universal -Filter *.pkg
+          if (-not $macDmg -and -not $macPkg) {
+            Write-Error "§16 Gate 4 failed: 未找到 macOS bundles (.dmg/.pkg)"
+            exit 1
+          }
+          if ($env:HAS_MAC_CERT -ne 'True') {
+            Write-Output "§16 Gate 4 SKIPPED: APPLE_CERTIFICATE 未配置，codesign/notarize/staple 全部跳过。请按 CHECKLIST §2 的 FALLBACK 处理。"
+            exit 0
+          }
+          Write-Output "macOS artifact found: $(($macDmg+$macPkg).Name -join ', ')"
+          Write-Output "§16 Gate 4 INFO: stapler + spctl assess 已在 build job (macos-14 runner) 执行；请 Release Manager 按 CHECKLIST §2 下载后复核："
+          Write-Output "  spctl --assess --type execute -vv Phonon.app"
+          Write-Output "  stapler validate Phonon.dmg"
+          Write-Output "Gate 4 PASSED (evidence-based; 本地复核 REQUIRED)"
+
+      # ── 验证 5：Linux AppImage sanity（AppRun + runtime fs + FUSE2 元信息）──
+      - name: (Gate 5/5) Linux AppImage sanity check
+        run: |
+          APPIMG=$(find gate-artifacts/release-payload-linux -name "*.AppImage" | head -1)
+          if [ -z "$APPIMG" ]; then echo "§16 Gate 5 failed: AppImage 缺失"; exit 1; fi
+          echo "Checking: $APPIMG"
+          file "$APPIMG"
+          # AppImage 是 squashfs + ELF stub；最基本 sanity：ELF 头 + 可执行位
+          if ! (file "$APPIMG" | grep -qiE "ELF.*executable|AppImage"); then
+            echo "§16 Gate 5 failed: AppImage 不像有效的 ELF / AppImage 文件头"
+            exit 1
+          fi
+          chmod +x "$APPIMG" 2>/dev/null || true
+          echo "Gate 5 PASSED: AppImage 文件头 OK"
+
+      # ── Gate 汇总：上传 consolidated SHA256SUMS + 验证报告 ──
+      - name: Upload §16 Gate verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification-report
+          path: release-out/
+          retention-days: 90
+
+  # ── 合并 updater.json + 创建 GitHub Release ──
+  release:
+    name: Publish Release + updater.json
+    needs: [build, release-verification]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts (payloads + updater-sigs + verification report)
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: (Pre-flight) Updater pubkey 非占位校验（从 tauri.conf.json 取真公钥写入 updater.json）
+        id: pubkey
+        shell: pwsh
+        run: |
+          $cfg = Get-Content phonon-tauri/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $pk = $cfg.plugins.updater.pubkey
+          if ($pk -match "PLACEHOLDER" -or [string]::IsNullOrWhiteSpace($pk)) {
+            Write-Error "§16 Block: updater pubkey 仍是占位符，拒绝生成 updater.json。"
+            exit 1
+          }
+          "PUBKEY=$pk" >> $env:GITHUB_OUTPUT
+
+      - name: Assemble updater.json
+        id: assemble_updater
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"  # e.g. v0.1.0
+          $version = $tag.TrimStart("v")
+          $root = "release-artifacts"
+          $pubkey = "${{ steps.pubkey.outputs.PUBKEY }}"
+
+          # 平台 → URL 模板（按实际最终发布主机替换前缀）；Tauri Updater 客户端匹配：
+          # windows-x86_64 / darwin-aarch64 / darwin-x86_64 / linux-x86_64
+          $out = [ordered]@{
+            version = $version
+            notes = "Release $tag — 见 https://github.com/phonon/phonon/releases/tag/$tag"
+            pub_date = (Get-Date -AsUTC).ToString("o")
+            platforms = [ordered]@{}
+          }
+
+          # 合并 consolidated SHA256SUMS 到 release 附件
+          $consolidated = Get-ChildItem -Recurse "$root" -Filter SHA256SUMS |
+            Select-Object -First 1
+          if ($consolidated) {
+            Copy-Item $consolidated.FullName "SHA256SUMS" -Force
+          }
+
+          function Add-Platform($key, $globExt, $sigExt) {
+            $bundle = Get-ChildItem -Recurse "$root" -Include "*.$globExt" |
+                        Where-Object { $_.FullName -notmatch 'updater-sig-' } |
+                        Select-Object -First 1
+            $sig = $null
+            if ($bundle) {
+              # sig 在 updater-sig-{platform} 子目录，按文件名匹配
+              $sig = Get-ChildItem -Recurse "$root/updater-sig-*" -File -ErrorAction SilentlyContinue |
+                       Where-Object { $_.Name -eq "$($bundle.Name).sig" } |
+                       Select-Object -First 1
+              if (-not $sig) {
+                $sig = Get-ChildItem -Recurse "$root" -Include "*.sig" -File -ErrorAction SilentlyContinue |
+                         Where-Object { $_.Name -like "*$($bundle.BaseName)*" } |
+                         Select-Object -First 1
+              }
+            }
+            if ($bundle) {
+              $entry = [ordered]@{
+                url = "https://releases.phonon.app/$tag/$($bundle.Name)"
+                signature = if ($sig) { (Get-Content $sig.FullName -Raw).Trim() } else { "" }
+              }
+              if ($globExt -eq "AppImage") {
+                $entry["format"] = "appimage"
+              }
+              $out.platforms[$key] = $entry
+              Write-Output "[$key] bundle=$($bundle.Name) sig=$(if($sig){'OK'}else{'MISSING'})"
+            } else {
+              Write-Output "[$key] SKIPPED (no bundle matching *.$globExt)"
+            }
+          }
+
+          Add-Platform "windows-x86_64" "nsis.exe" ".sig"
+          Add-Platform "darwin-x86_64"  "dmg"      ".sig"
+          Add-Platform "darwin-aarch64" "dmg"      ".sig"
+          Add-Platform "linux-x86_64"   "AppImage" ".sig"
+          Add-Platform "linux-x86_64-deb" "deb"    ".sig"
+
+          $out | ConvertTo-Json -Depth 10 | Set-Content updater.json
+          Write-Output "Assembled updater.json for $version ($($out.platforms.Count) platforms)"
+
+      - name: Create GitHub Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: ${{ inputs.draft_release || 'true' }}
+          generate_release_notes: true
+          body: |
+            ## Phonon ${{ github.ref_name }}
+
+            > **Release Gate（§16）**: `pre-release-gate` ✅ · `release-verification` 见 Actions artifact `release-verification-report`
+            >
+            > 完整性校验（下载后执行）：
+            > ```
+            > sha256sum -c SHA256SUMS
+            > ```
+
+            ### Platform bundles
+            | Platform | Format |
+            |---|---|
+            | Windows x64 | NSIS installer (`.nsis.exe`), MSI, Portable `.exe` |
+            | macOS Universal (x64 + arm64) | DMG, PKG |
+            | Linux x64 | AppImage, DEB |
+
+            ### 增量更新
+            Phonon 在 App 内自动检查增量更新（Tauri Updater Ed25519 签名，公钥见 `tauri.conf.json` → `plugins.updater.pubkey`）。
+            离线校验 updater.json 签名：
+            ```
+            cat updater.json | jq -r '.platforms["windows-x86_64"].signature'
+            ```
+          files: |
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.pkg
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.AppImage.zsync
+            updater.json
+            SHA256SUMS

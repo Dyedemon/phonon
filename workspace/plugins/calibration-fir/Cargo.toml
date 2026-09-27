@@ -1,0 +1,36 @@
+[package]
+name = "calibration-fir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# ── Legal / size constraint ──────────────────────────────────────────────
+#
+# This crate compiles to a CDYLIB → `.wasm` plugin. Dependencies are kept
+# intentionally tiny: we do NOT depend on `calibration-engine` (which
+# would pull rustfft + LS maths and blow the wasm past 1 MB). FIR
+# filtering only needs two static vectors of tap coefficients, decoded
+# from a `host.read_plugin_config("calibration")` JSON string.
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+# NOTE: calibration-types is allowed; it only has serde + UUID + error
+# enums (≈ 8 KB of wasm). No heavy maths.
+# `default-features = false` disables the `native` feature, so phonon-core
+# (and its cpal/tokio/windows deps) is NOT pulled into the wasm build.
+calibration-types = { path = "../../crates/calibration-types", default-features = false, features = ["std"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+# NOTE: Wasm size optimizations live in the workspace root `Cargo.toml` under
+# `[profile.wasm-release]`. Cargo silently ignores per-crate `[profile.*]`
+# declarations (see https://doc.rust-lang.org/cargo/reference/profiles.html).
+# Build with: `cargo build -p calibration-fir --profile wasm-release --target wasm32-wasip1`

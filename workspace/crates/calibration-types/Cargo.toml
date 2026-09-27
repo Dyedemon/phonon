@@ -1,0 +1,25 @@
+[package]
+name = "calibration-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+# `phonon-core` is only needed by native consumers (Tauri backend,
+# calibration-engine) for cross-crate type identity on EqBand/FilterType.
+# The Wasm `calibration-fir` plugin does NOT use EqBand/FilterType directly,
+# so it turns `default-features = false` to avoid pulling cpal/tokio/etc.
+phonon-core = { path = "../../../phonon-core", optional = true }
+
+[features]
+default = ["std", "native"]
+std = []
+# Enables re-exports from `phonon-core` (EqBand, FilterType, PeqUpdateError).
+# Wasm builds disable this to keep the dependency tree native-free.
+native = ["dep:phonon-core"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

@@ -1,0 +1,49 @@
+# cargo-deny configuration (v2 format)
+# https://embarkstudios.github.io/cargo-deny/
+# §14 Compliance Gate: block GPL/LGPL/AGPL/SSPL/BUSL/CPAL/commercial/UNKNOWN licenses
+#
+# v2 model (version = 2):
+#   - All licenses NOT in `allow` are automatically DENIED (default-deny)
+#   - The `deny` list is removed — it served no purpose under this model
+#   - `unlicensed` defaults to deny
+#   - `copyleft` defaults to deny
+
+[licenses]
+version = 2
+# Allow these permissive licenses. Everything else is denied by default.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+deny = []
+skip = []
+
+[advisories]
+version = 2
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

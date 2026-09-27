@@ -1,0 +1,85 @@
+/* ── Calibration Panel ─────────────────────── */
+
+.calibration-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius, 10px);
+  padding: var(--dsp-card-padding, 12px);
+  margin-bottom: var(--dsp-card-mb, 12px);
+}
+
+.calibration-panel .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.calibration-panel .panel-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.calibration-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.calibration-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.calibration-status .status-dot.active {
+  background: #4ecdc4;
+  box-shadow: 0 0 6px #4ecdc4;
+}
+
+.calibration-status .status-dot.bypassed {
+  background: #ffd93d;
+}
+
+.calibration-not-installed {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+}
+
+.calibration-not-installed h3 {
+  margin: 0 0 8px 0;
+  color: var(--text-primary);
+}
+
+.calibration-not-installed .hint {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 12px;
+}
+
+.calibration-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calibration-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calibration-section h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+

@@ -1,0 +1,28 @@
+[package]
+name = "calibration-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# ── shared ──
+calibration-types = { path = "../calibration-types", default-features = false, features = ["std"] }
+
+# ── workspace ──
+rustfft = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+log = { workspace = true }
+
+[features]
+default = ["std", "native"]
+std = ["calibration-types/std"]
+# Enables native-only re-exports (PeqUpdateError, ApplyError::Peq) and
+# phonon-core integration. Disable for WASM builds.
+native = ["calibration-types/native"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

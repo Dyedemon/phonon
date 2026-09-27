@@ -1,0 +1,4 @@
+            commands::set_peq_bypass,
+            // Acoustic calibration plugin persistence
+            commands::set_calibration_persist,
+        ])

@@ -1,0 +1,13 @@
+# `.cargo/config.toml`
+#
+# 仅 Windows 平台启用 `GETRANDOM_BACKEND = windows_legacy`（在 Windows 上
+# 作为 rand 后端，避免在某些老版本 Rust + Win32 下 panic）。
+# Linux/macOS 走默认 `getrandom` 后端，无需显式指定。
+#
+# 路径条件：只在 Windows（cfg(windows) / target = *windows*）下生效。
+
+[target.x86_64-pc-windows-msvc.env]
+GETRANDOM_BACKEND = "windows_legacy"
+
+[target.x86_64-pc-windows-gnu.env]
+GETRANDOM_BACKEND = "windows_legacy"

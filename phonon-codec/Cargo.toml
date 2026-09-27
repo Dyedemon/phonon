@@ -1,0 +1,21 @@
+[package]
+name = "phonon-codec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace
+log.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+byteorder.workspace = true
+image.workspace = true
+
+# Audio
+symphonia.workspace = true
+
+# Encoding
+encoding_rs = "0.8"

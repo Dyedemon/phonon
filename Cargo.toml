@@ -1,0 +1,120 @@
+[workspace]
+resolver = "2"
+members = [
+    "phonon-core",
+    "phonon-codec",
+    "phonon-plugin",
+    "phonon-plugin/phonon-plugin-sdk",
+    "phonon-source",
+    "phonon-media",
+    "phonon-cli",
+    "phonon-tauri/src-tauri",
+    "phonon-uninstaller",
+    "phonon-winui",
+    "phonon-installer",
+    "workspace/crates/calibration-types",
+    "workspace/crates/calibration-engine",
+    "workspace/plugins/calibration-fir",
+    "workspace/plugins/calibration",
+]
+# Windows-only crates (phonon-installer/uninstaller/winui use the `windows` crate).
+# Exclude them from default build/test/clippy so CI works on Linux & macOS.
+default-members = [
+    "phonon-core",
+    "phonon-codec",
+    "phonon-plugin",
+    "phonon-plugin/phonon-plugin-sdk",
+    "phonon-source",
+    "phonon-media",
+    "phonon-cli",
+    "phonon-tauri/src-tauri",
+    "workspace/crates/calibration-types",
+    "workspace/crates/calibration-engine",
+    "workspace/plugins/calibration-fir",
+    "workspace/plugins/calibration",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Phonon Contributors"]
+repository = "https://github.com/phonon/phonon"
+
+[workspace.dependencies]
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Audio decoding
+symphonia = { version = "0.5", features = ["all", "all-codecs"] }
+
+# Audio I/O
+cpal = "0.15"
+
+# Resampling
+rubato = "0.15"
+
+# Ring buffer
+ringbuf = "0.5"
+
+# FFT
+rustfft = "6.2"
+
+# WASM runtime
+wasmtime = "30"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+
+
+# Image (for album art)
+image = "0.25"
+
+# UUID
+uuid = { version = "1.0", features = ["v4"] }
+
+# Random (for shuffle playback)
+rand = "0.8"
+
+# Byte order
+byteorder = "1"
+
+# SQLite (media library)
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
+
+# Parallel scanning
+rayon = "1.10"
+
+# Recursive directory traversal
+walkdir = "2.5"
+
+# SHA1 hashing (cover thumbnails)
+sha1 = "0.10"
+
+# MSVC toolchain — no patches needed
+
+# Wasm plugin release profile (calibration-fir etc.).
+# Cargo only honors profiles declared at the workspace root; per-crate
+# `[profile.*]` blocks are silently ignored and produce a warning. Moving
+# the size-optimization settings here ensures they actually take effect.
+# Target: <120 KB (before wasm-opt -Oz).
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
