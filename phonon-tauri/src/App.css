@@ -14,6 +14,37 @@ html:not(.app-boot-done) #root {
   transition: opacity 0.3s ease-out;
 }
 
+/* ── 启动淡入 ──
+   主窗口以透明+亚克力创建：OS 窗口一次性显示（无 OS 级 resize，避免闪烁），
+   展开与淡入全部由 CSS 完成：
+   - html 启动期间半透明，透出亚克力模糊底色（仅主窗口，data-window 标记）
+   - .app 挂载时 scale(0.96)→1 + 淡入（无 fill-mode，动画结束即恢复
+     常规样式，不破坏 .app 的 background-attachment: fixed）
+   - #root 在 app-boot-done 后淡入
+*/
+html[data-window='main'] {
+  background: transparent;
+}
+
+html[data-window='main']:not(.app-boot-done) #root {
+  opacity: 0;
+}
+
+#root {
+  transition: opacity 0.3s ease-out;
+}
+
+@keyframes app-boot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.app {
+  animation: app-boot-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
 .app {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-window="main">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -7,8 +7,10 @@
     <title>Phonon</title>
     <style>
       html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; }
-      html { background: #05050c; }
-      body { background: #05050c; color: #b0bdd6; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      /* 启动层：半透明深色，透出 Rust 侧的亚克力模糊；界面就绪后由
+         App.css 的 app-boot-done 切换为最终背景 */
+      html { background: rgba(8, 8, 16, 0.55); }
+      body { background: transparent; color: #b0bdd6; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     </style>
   </head>
   <body>

@@ -170,19 +170,24 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
   // ── 启动淡入 ──
-  // 窗口以透明+亚克力背景创建（Rust 侧展开动画期间 webview 尚未挂载），
-  // React 首帧 commit 后的下一帧标记 boot 完成，#root 从透明过渡浮现。
-  // 双 rAF：确保首帧真的绘制完成后再开始过渡，避免与首次 paint 合帧。
+  // 窗口以透明+亚克力背景一次性显示（OS 窗口不再 resize，杜绝闪烁）。
+  // 双 rAF 确认首帧绘制后：标记 app-boot-done（html 恢复、#root 淡入），
+  // 并在淡入完成后通知后端撤掉亚克力（避免持续合成开销与 Win10 拖动迟滞）。
   useEffect(() => {
     let raf2 = 0
+    let clearTimer: ReturnType<typeof setTimeout> | undefined
     const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() =>
+      raf2 = requestAnimationFrame(() => {
         document.documentElement.classList.add('app-boot-done')
-      )
+        clearTimer = setTimeout(() => {
+          invoke('clear_boot_acrylic').catch(() => {})
+        }, 480)
+      })
     })
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
+      if (clearTimer) clearTimeout(clearTimer)
     }
   }, [])
 

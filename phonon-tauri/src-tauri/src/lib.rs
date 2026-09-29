@@ -1171,6 +1171,19 @@ fn take_cli_args() -> Vec<String> {
     CLI_ARGS.lock().unwrap().drain(..).collect()
 }
 
+/// 前端启动淡入完成后调用：撤掉窗口的亚克力背景。
+/// 继续保留只会增加合成开销（Win10 上还会造成窗口拖动迟滞），
+/// 而此时界面已完全不透明，视觉上无差别。
+#[tauri::command]
+fn clear_boot_acrylic(app: tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = window_vibrancy::clear_acrylic(&win);
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = app;
+}
+
 /// Persist the main window's geometry (position/size + monitor scale factor).
 /// Ignored when maximized/minimized (keeps the un-maximized restore bounds;
 /// -32000-style minimized coordinates are rejected). Called on window close,
@@ -1379,6 +1392,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            // Boot
+            clear_boot_acrylic,
             // Playback
             commands::play,
             commands::toggle_play_pause,
@@ -1863,75 +1878,20 @@ pub fn run() {
                         let _ = w.set_size(PhysicalSize::new(final_w, final_h));
                     }
                 }
-                // ── 启动动画：窗口从 ~88% 尺寸以 ease-out 展开到目标大小，
-                // 亚克力背景透过透明 webview 呈现模糊底色，页面加载完成后
-                // 前端 #root 淡入（app-boot-done）。maximized 恢复走原有
-                // 延迟最大化路径，跳过展开动画避免两段动画叠加。
-                let maximized_restore = app_handle
-                    .state::<AppState>()
-                    .settings
-                    .lock()
-                    .map(|s| s.main_window_maximized)
-                    .unwrap_or(false);
+                // ── 启动序列：亚克力背景 + 一次性显示。展开/淡入动画全部在
+                // 前端 CSS 内完成（对透明窗口做 OS 级 resize 会触发 DWM
+                // 重组合导致整窗闪烁，这正是此前“闪三下”的原因）。
+                // 窗口在创建时即处于最终几何（restore 已完成），此处仅应用
+                // 亚克力并显示一次；页面加载完毕后由前端触发清除亚克力。
                 let anim_win = window.clone();
                 {
                     #[cfg(target_os = "windows")]
                     {
-                        // 亚克力模糊底色（webview 此刻透明，页面加载后由前端覆盖）
+                        // 亚克力模糊底色（webview 启动层为半透明，可透出）
                         let _ = window_vibrancy::apply_acrylic(
                             &anim_win,
                             Some((8, 8, 16, 120)),
                         );
-                    }
-                    if !maximized_restore {
-                        #[cfg(target_os = "windows")]
-                        {
-                            let fpos = anim_win
-                                .outer_position()
-                                .unwrap_or(tauri::PhysicalPosition::new(0, 0));
-                            let fsize = anim_win
-                                .inner_size()
-                                .unwrap_or(tauri::PhysicalSize::new(1100, 750));
-                            let sw = ((fsize.width as f64) * 0.88).round() as i32;
-                            let sh = ((fsize.height as f64) * 0.92).round() as i32;
-                            let sx = fpos.x + ((fsize.width as i32) - sw) / 2;
-                            let sy = fpos.y + ((fsize.height as i32) - sh) / 2;
-                            let _ = anim_win.set_size(tauri::PhysicalSize::new(
-                                sw.max(400) as u32,
-                                sh.max(300) as u32,
-                            ));
-                            let _ = anim_win.set_position(tauri::PhysicalPosition::new(sx, sy));
-                            let thread_win = anim_win.clone();
-                            std::thread::spawn(move || {
-                                let frames = 16usize;
-                                let frame_ms = std::time::Duration::from_millis(15);
-                                for i in 1..=frames {
-                                    let t = i as f64 / frames as f64;
-                                    let e = 1.0 - (1.0 - t).powi(3); // ease-out cubic
-                                    let cw = (sw as f64
-                                        + (fsize.width as f64 - sw as f64) * e)
-                                        .round() as u32;
-                                    let ch = (sh as f64
-                                        + (fsize.height as f64 - sh as f64) * e)
-                                        .round() as u32;
-                                    let cx = (sx as f64
-                                        + (fpos.x as f64 - sx as f64) * e)
-                                        .round() as i32;
-                                    let cy = (sy as f64
-                                        + (fpos.y as f64 - sy as f64) * e)
-                                        .round() as i32;
-                                    let _ =
-                                        thread_win.set_size(tauri::PhysicalSize::new(cw, ch));
-                                    let _ = thread_win
-                                        .set_position(tauri::PhysicalPosition::new(cx, cy));
-                                    std::thread::sleep(frame_ms);
-                                }
-                                let _ = thread_win
-                                    .set_size(tauri::PhysicalSize::new(fsize.width, fsize.height));
-                                let _ = thread_win
-                                    .set_position(tauri::PhysicalPosition::new(fpos.x, fpos.y));
-                            });
-                        }
                     }
                     let _ = anim_win.show();
                 }
