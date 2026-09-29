@@ -98,7 +98,6 @@ enum IconKind {
     Shield,
     Music,
     Trash,
-    Eraser,
 }
 
 // ============ State ============
@@ -106,7 +105,9 @@ enum IconKind {
 struct State {
     phase: Phase,
     selected: i32,
+    advanced_open: bool,
     hover_option: i32,
+    hover_advanced: bool,
     hover_btn: i32,
     hover_close: bool,
     progress_step: i32,
@@ -119,8 +120,10 @@ impl State {
     fn new() -> Self {
         Self {
             phase: Phase::Select,
-            selected: 3,
+            selected: 0,
+            advanced_open: false,
             hover_option: -1,
+            hover_advanced: false,
             hover_btn: -1,
             hover_close: false,
             progress_step: 0,
@@ -194,8 +197,17 @@ fn point_in_rect(x: i32, y: i32, r: &RECT) -> bool {
     x >= r.left && x < r.right && y >= r.top && y < r.bottom
 }
 
-fn hit_test_option(x: i32, y: i32) -> i32 {
-    for i in 0..4 {
+/// 可见的选项数量：高级折叠关闭时隐藏「仅保留歌单曲库」
+fn visible_option_count(advanced_open: bool) -> i32 {
+    if advanced_open {
+        3
+    } else {
+        2
+    }
+}
+
+fn hit_test_option(x: i32, y: i32, advanced_open: bool) -> i32 {
+    for i in 0..visible_option_count(advanced_open) {
         if point_in_rect(x, y, &option_rect(i)) {
             return i;
         }
@@ -203,33 +215,23 @@ fn hit_test_option(x: i32, y: i32) -> i32 {
     -1
 }
 
-fn get_data_dir() -> Option<PathBuf> {
-    let appdata = std::env::var("APPDATA").ok()?;
-    let p1 = PathBuf::from(&appdata).join("com.phonon.app");
-    if p1.exists() {
-        return Some(p1);
-    }
-    let p2 = PathBuf::from(&appdata).join("Phonon");
-    if p2.exists() {
-        return Some(p2);
-    }
-    Some(p1)
+/// 底部「高级选项」切换行的区域
+fn advanced_toggle_rect(advanced_open: bool) -> RECT {
+    let y = s(OPTION_START_Y)
+        + visible_option_count(advanced_open) * (s(OPTION_H) + s(OPTION_GAP))
+        + s(2);
+    make_rect(s(PADDING), y, s(W_WIDTH) - s(PADDING), y + s(22))
 }
 
 // ============ Text data ============
 
-const OPTION_TITLES: [&str; 4] = [
-    "保留所有数据",
-    "仅保留歌单曲库",
-    "删除所有数据（保留外置插件）",
-    "删除所有数据及外置插件",
-];
+// 0 = 保留全部数据（默认），1 = 彻底卸载，2 = 仅保留歌单曲库（高级，折叠隐藏）
+const OPTION_TITLES: [&str; 3] = ["卸载并保留我的数据", "彻底卸载", "仅保留歌单曲库"];
 
-const OPTION_DESCS: [&str; 4] = [
-    "仅卸载程序，配置与曲库完整保留",
-    "保留曲库索引、评分，删除设置和插件",
-    "删除设置、曲库、会话，保留外置插件",
-    "彻底清除所有数据，外置插件也将删除",
+const OPTION_DESCS: [&str; 3] = [
+    "仅移除程序文件，配置、歌单曲库与插件完整保留",
+    "删除程序与全部数据，包括设置、曲库、会话和插件",
+    "重置应用：删除设置、插件与缓存，保留曲库索引和评分",
 ];
 
 const PROGRESS_STEPS: [&str; 4] = [
@@ -434,11 +436,13 @@ fn on_paint(hwnd: HWND, state: &mut State) {
         // avoids a double borrow of `state`.
         let phase = state.phase;
         let selected = state.selected;
+        let advanced_open = state.advanced_open;
         let hover_btn = state.hover_btn;
         let hover_close = state.hover_close;
         let progress_step = state.progress_step;
         let anim_tick = state.anim_tick;
         let hover_option = state.hover_option;
+        let hover_advanced = state.hover_advanced;
         let canvas = state.canvas.as_mut().unwrap();
 
         canvas.begin();
@@ -451,7 +455,9 @@ fn on_paint(hwnd: HWND, state: &mut State) {
                 canvas,
                 anim_tick,
                 selected,
+                advanced_open,
                 hover_option,
+                hover_advanced,
                 hover_close,
                 hover_btn,
             ),
@@ -672,58 +678,6 @@ fn draw_option_icon(canvas: &mut Canvas, cx: i32, cy: i32, kind: &IconKind, sele
                 bottom_y - s(3),
                 glyph_color,
                 1.0,
-            );
-        }
-        IconKind::Eraser => {
-            // Explosion/bomb icon - more dynamic
-            let center_x = cx;
-            let center_y = cy + s(1);
-            let radius = s(6);
-
-            // Main circle (bomb body)
-            canvas.fill_ellipse(center_x, center_y, radius, radius, glyph_color);
-
-            // Fuse (curved-ish)
-            canvas.line(
-                center_x + s(3),
-                center_y - s(5),
-                center_x + s(5),
-                center_y - s(8),
-                glyph_color,
-                2.0,
-            );
-            canvas.line(
-                center_x + s(5),
-                center_y - s(8),
-                center_x + s(7),
-                center_y - s(6),
-                glyph_color,
-                2.0,
-            );
-
-            // Spark (small star-like)
-            let spark_cx = center_x + s(7);
-            let spark_cy = center_y - s(9);
-            let sr = s(2);
-            canvas.fill_ellipse(spark_cx, spark_cy, sr, sr, glyph_color);
-
-            // X inside (white if selected, icon bg if not)
-            let x_color = if selected { CLR_WHITE } else { CLR_ICON_BG };
-            canvas.line(
-                center_x - s(3),
-                center_y - s(3),
-                center_x + s(3),
-                center_y + s(3),
-                x_color,
-                2.0,
-            );
-            canvas.line(
-                center_x + s(3),
-                center_y - s(3),
-                center_x - s(3),
-                center_y + s(3),
-                x_color,
-                2.0,
             );
         }
     }
@@ -1037,9 +991,8 @@ fn draw_option_card(canvas: &mut Canvas, idx: i32, selected: bool, hovered: bool
 
     let icon_kind = match idx {
         0 => IconKind::Shield,
-        1 => IconKind::Music,
-        2 => IconKind::Trash,
-        _ => IconKind::Eraser,
+        1 => IconKind::Trash,
+        _ => IconKind::Music,
     };
 
     // Outer glow for selected state
@@ -1145,7 +1098,9 @@ fn paint_select(
     canvas: &mut Canvas,
     anim_tick: u32,
     selected: i32,
+    advanced_open: bool,
     hover_option: i32,
+    hover_advanced: bool,
     hover_close: bool,
     hover_btn: i32,
 ) {
@@ -1161,9 +1116,30 @@ fn paint_select(
         FontStyle::Micro,
     );
 
-    for i in 0..4 {
+    for i in 0..visible_option_count(advanced_open) {
         draw_option_card(canvas, i, selected == i, hover_option == i);
     }
+
+    // 高级选项折叠开关
+    let tr = advanced_toggle_rect(advanced_open);
+    let toggle_text = if advanced_open {
+        "收起高级选项 ▴"
+    } else {
+        "高级选项 ▾"
+    };
+    let link_color = if hover_advanced {
+        CLR_TEXT_BRIGHT
+    } else {
+        CLR_TEXT_DIM
+    };
+    draw_text_left(
+        canvas,
+        toggle_text,
+        tr.left,
+        tr.top,
+        link_color,
+        FontStyle::Micro,
+    );
 
     let lb = left_button_rect();
     let rb = right_button_rect();
@@ -1539,9 +1515,20 @@ fn on_lbuttondown(hwnd: HWND, state: &mut State, lparam: LPARAM) {
 
     match state.phase {
         Phase::Select => {
-            let opt = hit_test_option(x, y);
+            let opt = hit_test_option(x, y, state.advanced_open);
             if opt >= 0 {
                 state.selected = opt;
+                unsafe {
+                    let _ = InvalidateRect(hwnd, None, false);
+                }
+                return;
+            }
+            if point_in_rect(x, y, &advanced_toggle_rect(state.advanced_open)) {
+                state.advanced_open = !state.advanced_open;
+                // 收起高级区时，若选中的是高级选项则回落到默认
+                if !state.advanced_open && state.selected == 2 {
+                    state.selected = 0;
+                }
                 unsafe {
                     let _ = InvalidateRect(hwnd, None, false);
                 }
@@ -1605,9 +1592,10 @@ fn on_mousemove(hwnd: HWND, state: &mut State, lparam: LPARAM) {
 
     match state.phase {
         Phase::Select => {
-            let opt = hit_test_option(x, y);
+            let opt = hit_test_option(x, y, state.advanced_open);
             let lb = point_in_rect(x, y, &left_button_rect());
             let rb = point_in_rect(x, y, &right_button_rect());
+            let adv = point_in_rect(x, y, &advanced_toggle_rect(state.advanced_open));
             let new_opt = if opt >= 0 { opt } else { -1 };
             let new_btn = if lb {
                 0
@@ -1616,9 +1604,13 @@ fn on_mousemove(hwnd: HWND, state: &mut State, lparam: LPARAM) {
             } else {
                 -1
             };
-            if new_opt != state.hover_option || new_btn != state.hover_btn {
+            if new_opt != state.hover_option
+                || new_btn != state.hover_btn
+                || adv != state.hover_advanced
+            {
                 state.hover_option = new_opt;
                 state.hover_btn = new_btn;
+                state.hover_advanced = adv;
                 changed = true;
             }
         }
@@ -1664,6 +1656,7 @@ fn perform_uninstall(hwnd: HWND, option: i32) {
         if let Some(install_dir) = exe_path.parent() {
             delete_program_files(install_dir, &exe_path);
         }
+        delete_shortcuts();
 
         post_progress(hwnd_ptr, 2);
         delete_app_data(option);
@@ -1718,24 +1711,94 @@ fn delete_program_files(install_dir: &Path, exe_path: &Path) {
     }
 }
 
+/// 应用数据目录（Roaming）：当前标识 com.phonon.app + 旧版残留的 Phonon
+fn roaming_data_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        dirs.push(PathBuf::from(&appdata).join("com.phonon.app"));
+        dirs.push(PathBuf::from(&appdata).join("Phonon"));
+    }
+    dirs
+}
+
+/// 本地数据目录（Local）：WebView 缓存/localStorage（UI 设置存在这里）+ 日志
+fn local_data_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        dirs.push(PathBuf::from(&local).join("com.phonon.app"));
+    }
+    dirs
+}
+
+/// 库数据库文件（WAL 模式：-wal/-shm 里保存着尚未合并的最新写入，
+/// 只保留 .sqlite 会丢数据甚至损坏库）
+const LIBRARY_KEEP: [&str; 6] = [
+    "library.sqlite",
+    "library.sqlite-wal",
+    "library.sqlite-shm",
+    "replaygains.sqlite",
+    "replaygains.sqlite-wal",
+    "replaygains.sqlite-shm",
+];
+
 fn delete_app_data(option: i32) {
-    let Some(data_dir) = get_data_dir() else {
-        return;
-    };
     match option {
+        // 保留全部数据
         0 => {}
+        // 彻底卸载：全部删除
         1 => {
-            let keep = ["library.sqlite", "replaygains.sqlite"];
-            delete_dir_contents_except(&data_dir, &keep);
+            for dir in roaming_data_dirs().into_iter().chain(local_data_dirs()) {
+                if dir.exists() {
+                    let _ = std::fs::remove_dir_all(&dir);
+                }
+            }
         }
+        // 重置应用（高级）：清空 Roaming（保留库文件），并删除 Local（UI 设置与缓存）
         2 => {
-            let keep = ["plugins"];
-            delete_dir_contents_except(&data_dir, &keep);
-        }
-        3 => {
-            let _ = std::fs::remove_dir_all(&data_dir);
+            for dir in roaming_data_dirs() {
+                if dir.exists() {
+                    delete_dir_contents_except(&dir, &LIBRARY_KEEP);
+                }
+            }
+            for dir in local_data_dirs() {
+                if dir.exists() {
+                    let _ = std::fs::remove_dir_all(&dir);
+                }
+            }
         }
         _ => {}
+    }
+}
+
+/// 删除安装器创建的快捷方式（桌面 / OneDrive 桌面 / 公共桌面 / 开始菜单）
+fn delete_shortcuts() {
+    let mut targets: Vec<PathBuf> = Vec::new();
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        let profile = PathBuf::from(profile);
+        targets.push(profile.join("Desktop").join("Phonon.lnk"));
+        targets.push(profile.join("OneDrive").join("Desktop").join("Phonon.lnk"));
+        targets.push(profile.join("OneDrive").join("桌面").join("Phonon.lnk"));
+    }
+    targets.push(PathBuf::from(r"C:\Users\Public\Desktop\Phonon.lnk"));
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        targets.push(
+            PathBuf::from(appdata)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Start Menu")
+                .join("Programs")
+                .join("Phonon"),
+        );
+    }
+    targets.push(PathBuf::from(
+        r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Phonon",
+    ));
+    for target in targets {
+        if target.is_dir() {
+            let _ = std::fs::remove_dir_all(&target);
+        } else {
+            let _ = std::fs::remove_file(&target);
+        }
     }
 }
 
