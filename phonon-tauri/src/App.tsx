@@ -181,7 +181,7 @@ function App() {
         document.documentElement.classList.add('app-boot-done')
         clearTimer = setTimeout(() => {
           invoke('clear_boot_acrylic').catch(() => {})
-        }, 480)
+        }, 3200)
       })
     })
     return () => {
