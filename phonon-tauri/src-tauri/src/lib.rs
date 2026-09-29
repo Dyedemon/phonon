@@ -1171,6 +1171,19 @@ fn take_cli_args() -> Vec<String> {
     CLI_ARGS.lock().unwrap().drain(..).collect()
 }
 
+/// 由前端在启动层（HTML 内联样式）完成首次绘制后调用。
+/// 在此之前窗口保持隐藏——提前 show 会露出 WebView2 的默认白色底，
+/// 这正是“打开时闪白”的来源。
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if !win.is_visible().unwrap_or(false) {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+    }
+}
+
 /// 前端启动淡入完成后调用：撤掉窗口的亚克力背景。
 /// 继续保留只会增加合成开销（Win10 上还会造成窗口拖动迟滞），
 /// 而此时界面已完全不透明，视觉上无差别。
@@ -1393,6 +1406,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Boot
+            show_main_window,
             clear_boot_acrylic,
             // Playback
             commands::play,
@@ -1893,7 +1907,15 @@ pub fn run() {
                             Some((8, 8, 16, 120)),
                         );
                     }
-                    let _ = anim_win.show();
+                    // 兜底：若前端异常导致永不调用 show_main_window，
+                    // 3 秒后强制显示（宁可暗屏也不白屏/无窗）。
+                    let safety_win = anim_win.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        if !safety_win.is_visible().unwrap_or(false) {
+                            let _ = safety_win.show();
+                        }
+                    });
                 }
 
                 window.on_window_event(move |event| {

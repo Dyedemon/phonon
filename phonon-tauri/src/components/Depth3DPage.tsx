@@ -140,6 +140,7 @@ export default function Depth3DPage({
 
         {sceneSettings.theme === 'rhythm' && (
           <>
+            <StarField audioRef={audioRef} quality={sceneSettings.quality} />
             <RhythmVisualizer audioRef={audioRef} />
           </>
         )}
@@ -185,11 +186,11 @@ export default function Depth3DPage({
               bokehScale={sceneSettings.quality === 'low' ? 0.5 : sceneSettings.quality === 'mid' ? 0.9 : sceneSettings.quality === 'ultra' ? 1.5 : 1.2}
             />
             <Bloom
-              intensity={sceneSettings.quality === 'low' ? 0.25 : sceneSettings.quality === 'mid' ? 0.35 : sceneSettings.quality === 'ultra' ? 0.55 : 0.4}
-              luminanceThreshold={sceneSettings.quality === 'low' ? 0.75 : sceneSettings.quality === 'mid' ? 0.65 : 0.6}
+              intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.45 : 0.32}
+              luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : 0.75}
               luminanceSmoothing={0.9}
               mipmapBlur
-              radius={sceneSettings.quality === 'low' ? 0.4 : sceneSettings.quality === 'mid' ? 0.5 : sceneSettings.quality === 'ultra' ? 0.8 : 0.6}
+              radius={sceneSettings.quality === 'low' ? 0.35 : sceneSettings.quality === 'mid' ? 0.45 : sceneSettings.quality === 'ultra' ? 0.7 : 0.55}
             />
             <Vignette eskil={false} offset={0.2} darkness={0.65} />
             {sceneSettings.quality !== 'low' && (
@@ -282,24 +283,30 @@ function CameraRig({ audioRef, theme }: {
     lastBeatRef.current = d.beat
 
     if (isRhythm) {
-      // 节奏模式：非常轻微的偏移，聚焦判定线
-      // 只有 beat 时才有微小的前后推拉感
-      const beatPush = beatShakeRef.current * 0.15
-      targetShakeRef.current.x = lerp(targetShakeRef.current.x, Math.sin(clock.elapsedTime * 0.3) * 0.1, 0.05)
-      targetShakeRef.current.y = lerp(targetShakeRef.current.y, Math.sin(clock.elapsedTime * 0.2) * 0.08 - beatPush * 0.1, 0.06)
-      targetShakeRef.current.z = lerp(targetShakeRef.current.z, -beatPush * 0.5 + d.lowFreqAvg * 0.1, 0.08)
+      // 节奏模式：OrbitControls 负责控制相机，这里只做极轻量的 beat 推拉
+      // 不覆盖 target，避免用户无法拖动
+      if (controls) {
+        const c = controls as any
+        const beatPush = beatShakeRef.current * 0.08
+        // 只对相机位置做极微小的 beat 推拉（不影响 target，用户可自由拖动）
+        if (camera && c.target) {
+          const dir = new THREE.Vector3()
+          dir.subVectors(camera.position, c.target).normalize()
+          camera.position.addScaledVector(dir, -beatPush * 0.15)
+        }
+      }
     } else {
-      // 星云模式：正常幅度的浮动
+      // 星云模式：正常幅度的浮动，覆盖 target
       targetShakeRef.current.x = lerp(targetShakeRef.current.x, 0, 0.08)
       targetShakeRef.current.y = lerp(targetShakeRef.current.y, Math.sin(clock.elapsedTime * 0.25) * 0.05 - d.lowFreqAvg * 0.04, 0.08)
       targetShakeRef.current.z = lerp(targetShakeRef.current.z, -d.lowFreqAvg * 0.1, 0.08)
-    }
 
-    if (controls) {
-      const c = controls as any
-      if (c.target) {
-        c.target.copy(targetBaseRef.current).add(targetShakeRef.current)
-        if (typeof c.update === 'function') c.update()
+      if (controls) {
+        const c = controls as any
+        if (c.target) {
+          c.target.copy(targetBaseRef.current).add(targetShakeRef.current)
+          if (typeof c.update === 'function') c.update()
+        }
       }
     }
   })

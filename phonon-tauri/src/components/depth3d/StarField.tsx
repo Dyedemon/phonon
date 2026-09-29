@@ -185,14 +185,14 @@ export function StarField({ audioRef, quality }: Props) {
       starsRef.current.rotation.y = t * 0.01
       const mat = starsRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.7 + hi * 0.5
+      mat.uniforms.uIntensity.value = 0.65 + hi * 0.12
     }
 
     if (twinkleRef.current) {
       twinkleRef.current.rotation.y = -t * 0.015
       const mat = twinkleRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.4 + hi * 0.8
+      mat.uniforms.uIntensity.value = 0.35 + hi * 0.2
     }
   })
 
