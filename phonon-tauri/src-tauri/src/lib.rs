@@ -1203,7 +1203,9 @@ fn clear_boot_acrylic(app: tauri::AppHandle) {
 /// hide-to-tray and app quit so the restored geometry never goes stale —
 /// previously only the window-X path saved it, making tray-quit sessions
 /// restore stale bounds on next launch.
-pub(crate) fn save_main_window_geometry(app: &tauri::AppHandle) -> Option<crate::state::AppSettings> {
+pub(crate) fn save_main_window_geometry(
+    app: &tauri::AppHandle,
+) -> Option<crate::state::AppSettings> {
     let win = app.get_webview_window("main")?;
     let is_maximized = win.is_maximized().unwrap_or(false);
     let is_minimized = win.is_minimized().unwrap_or(false);
@@ -1218,11 +1220,7 @@ pub(crate) fn save_main_window_geometry(app: &tauri::AppHandle) -> Option<crate:
         let mut s = state.settings.lock().unwrap();
         if !is_maximized && !is_minimized {
             if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
-                if pos.x > -1000
-                    && pos.y > -1000
-                    && size.width >= 400
-                    && size.height >= 300
-                {
+                if pos.x > -1000 && pos.y > -1000 && size.width >= 400 && size.height >= 300 {
                     s.main_window_x = pos.x as f64;
                     s.main_window_y = pos.y as f64;
                     s.main_window_width = size.width as f64;
@@ -1918,7 +1916,29 @@ pub fn run() {
                     });
                 }
 
+                // ── 几何防抖保存：移动/缩放停止 1 秒后自动落盘。
+                // 此前的保存点只有“点 X 关闭”，托盘退出（quit_app）之外的
+                // 一切退出方式——终端 Ctrl+C、进程被杀、崩溃——都会让下次
+                // 启动恢复到过期的几何，这就是“打开时大小/位置偶尔错误”。
+                let geo_save_gen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+                let geo_app = app_handle.clone();
+                let geo_gen_for_events = geo_save_gen.clone();
                 window.on_window_event(move |event| {
+                    // Debounced save on move/resize settle
+                    if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
+                        let gen = geo_gen_for_events
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            + 1;
+                        let geo_app = geo_app.clone();
+                        let geo_gen = geo_save_gen.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                            // Only the latest pending event performs the save.
+                            if geo_gen.load(std::sync::atomic::Ordering::SeqCst) == gen {
+                                save_main_window_geometry(&geo_app);
+                            }
+                        });
+                    }
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         // Save geometry (position/size + monitor scale) before
                         // closing; maximized/minimized keep the stored restore

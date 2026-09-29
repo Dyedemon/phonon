@@ -34,17 +34,6 @@ html[data-window='main']:not(.app-boot-done) #root {
   transition: opacity 1.8s ease-out;
 }
 
-@keyframes app-boot-in {
-  from {
-    opacity: 0;
-    transform: scale(0.88);
-  }
-}
-
-.app {
-  animation: app-boot-in 2.2s cubic-bezier(0.22, 1, 0.36, 1) 1;
-}
-
 .app {
   display: flex;
   flex-direction: column;
