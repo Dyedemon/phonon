@@ -1,17 +1,19 @@
 ﻿/* ── 启动淡入（主窗口专用，data-window 标记；当前为慢速检查版） ──
    窗口以透明+亚克力一次性显示（无 OS 级 resize，避免闪烁）。
-   启动期间 html 半透明，透出亚克力模糊底色；React 首帧后 html 加
-   app-boot-done：#root 淡入浮现，html 恢复不透明。*/
+   淡入用 CSS animation 挂在 #root 上：每次页面加载必然重播一次，
+   不依赖 html 类切换（HMR/热更新也不会漏）。*/
 html[data-window='main'] {
   background: transparent;
 }
 
-html[data-window='main']:not(.app-boot-done) #root {
-  opacity: 0;
+@keyframes app-fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
-#root {
-  transition: opacity 1.8s ease-out;
+html[data-window='main'] #root {
+  animation: app-fade-in 1.8s ease-out 1;
 }
 
 .app {
