@@ -1,4 +1,20 @@
-﻿.app {
+﻿/* ── 启动淡入 ──
+   窗口以透明+亚克力创建：Rust 展开动画期间 webview 透明（html 背景让位），
+   亚克力模糊透出；React 首帧后 html 加 app-boot-done，#root 淡入浮现，
+   html 恢复不透明背景。*/
+html:not(.app-boot-done) {
+  background: transparent;
+}
+
+html:not(.app-boot-done) #root {
+  opacity: 0;
+}
+
+#root {
+  transition: opacity 0.3s ease-out;
+}
+
+.app {
   display: flex;
   flex-direction: column;
   height: 100vh;

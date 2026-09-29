@@ -169,6 +169,23 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
+  // ── 启动淡入 ──
+  // 窗口以透明+亚克力背景创建（Rust 侧展开动画期间 webview 尚未挂载），
+  // React 首帧 commit 后的下一帧标记 boot 完成，#root 从透明过渡浮现。
+  // 双 rAF：确保首帧真的绘制完成后再开始过渡，避免与首次 paint 合帧。
+  useEffect(() => {
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() =>
+        document.documentElement.classList.add('app-boot-done')
+      )
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [])
+
   // ═══════════════════════════════════════════════════════════════
   //  E2E 测试专用钩子（零副作用）
   //
@@ -322,6 +339,19 @@ function App() {
     setVolumeModeRaw(mode)
     localStorage.setItem('phonon-volume-mode', mode)
   }
+  // 音量状态（App 层统一管理，供主界面和 3D 页面共享）
+  const [volume, setVolume] = useState(() => {
+    const saved = localStorage.getItem('phonon-volume')
+    return saved ? Number(saved) : 80
+  })
+  const throttledSetVolume = useThrottledCallback((level: number) => {
+    invoke('set_volume', { level }).catch(() => {})
+  }, 50)
+  const handleVolume = useCallback((v: number) => {
+    setVolume(v)
+    localStorage.setItem('phonon-volume', String(v))
+    throttledSetVolume(v / 100)
+  }, [throttledSetVolume])
   // Persist playback mode to localStorage so it survives HMR refresh.
   // The Rust side also keeps it in memory, but `load_session` (called on
   // every frontend mount) reloads the *stale* session file and would
@@ -1541,6 +1571,40 @@ function App() {
     }
   }, [refreshPlayback])
 
+  // ── 音量初始化 & 硬件音量同步 ──
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      invoke<number>('get_volume_level').then((l) => {
+        if (cancelled) return
+        const backendVol = Math.round(l * 100)
+        if (backendVol === 100) {
+          const saved = localStorage.getItem('phonon-volume')
+          if (saved) {
+            const localVol = Number(saved)
+            setVolume(localVol)
+            invoke('set_volume', { level: localVol / 100 }).catch(() => {})
+            return
+          }
+        }
+        setVolume(backendVol)
+        localStorage.setItem('phonon-volume', String(backendVol))
+      }).catch(() => {})
+    }, 80)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [])
+
+  // 硬件音量变化同步
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null
+    safeListen<number>('hw-volume', (event) => {
+      const v = Math.round(event.payload * 100)
+      setVolume(v)
+      localStorage.setItem('phonon-volume', String(v))
+    }).then((fn) => { unlistenFn = fn }).catch(() => {})
+    return () => { if (unlistenFn) { try { unlistenFn() } catch {} } }
+  }, [])
+
   // Listen for visual enhancement plugin enable/disable changes.
   // 当插件被禁用（总开关关闭）时，必须连带关闭所有视觉增强效果，
   // 否则 data-vis-mode 属性会残留在 <html> 上，界面仍保持提升质感。
@@ -1620,7 +1684,8 @@ function App() {
             <Depth3DPage
               onClose={() => setActiveTab('player')}
               playback={playback}
-              volume={80}
+              volume={volume}
+              onVolumeChange={handleVolume}
               coverUrl={coverUrl}
               visActive={visActive}
               visMode={visMode}
@@ -1662,7 +1727,7 @@ function App() {
       </div>
 
       {/* Draggable split bar between content and player bar */}
-      <PlayerBar playback={playback} onUpdate={refreshPlayback} volumeMode={volumeMode} onVolumeModeChange={setVolumeMode} playbackMode={playbackMode} setPlaybackMode={setPlaybackMode} addToast={addToast} coverUrl={coverUrl} onOpenLyrics={() => setShowLyricsPage(true)} onToggleDesktopLyrics={() => setDesktopLyricsOpen(!desktopLyricsOpen)} desktopLyricsOpen={desktopLyricsOpen} />
+      <PlayerBar playback={playback} onUpdate={refreshPlayback} volume={volume} onVolumeChange={handleVolume} volumeMode={volumeMode} onVolumeModeChange={setVolumeMode} playbackMode={playbackMode} setPlaybackMode={setPlaybackMode} addToast={addToast} coverUrl={coverUrl} onOpenLyrics={() => setShowLyricsPage(true)} onToggleDesktopLyrics={() => setDesktopLyricsOpen(!desktopLyricsOpen)} desktopLyricsOpen={desktopLyricsOpen} />
     </div>
 
     {/* ── EULA 首次启动弹窗（§14 合规） ─────────────────────── */}
@@ -1855,6 +1920,8 @@ function PlayerView({
 interface PlayerBarProps {
   playback: PlaybackState
   onUpdate: () => void
+  volume: number
+  onVolumeChange: (v: number) => void
   volumeMode: string
   onVolumeModeChange: (mode: string) => void
   playbackMode: string
@@ -1869,6 +1936,8 @@ interface PlayerBarProps {
 function PlayerBar({
   playback,
   onUpdate,
+  volume,
+  onVolumeChange,
   volumeMode,
   onVolumeModeChange,
   playbackMode,
@@ -1883,10 +1952,6 @@ function PlayerBar({
   // Position streams through the progress bus — subscribing here keeps the
   // ~20 Hz re-render local to PlayerBar instead of the whole App tree.
   const progress = useProgress()
-  const [volume, setVolume] = useState(() => {
-    const saved = localStorage.getItem('phonon-volume')
-    return saved ? Number(saved) : 80
-  })
   const [seekPct, setSeekPct] = useState(0)
   const seekPctRef = useRef(0)
   const draggingRef = useRef(false)
@@ -1907,48 +1972,6 @@ function PlayerBar({
   const durationRef = useRef(playback.duration_secs)
   durationRef.current = progress.duration ?? playback.duration_secs
 
-  // Load volume level — deferred with a short delay so Tauri's frontend
-  // callback registry is ready and we don't get spurious
-  // "[TAURI] Couldn't find callback id" warnings on launch.
-  useEffect(() => {
-    let cancelled = false
-    const timer = setTimeout(() => {
-      invoke<number>('get_volume_level').then((l) => {
-        if (cancelled) return
-        const backendVol = Math.round(l * 100)
-        // If backend returns default max (100), the session didn't have a saved
-        // volume level — use localStorage value and sync it to backend.
-        if (backendVol === 100) {
-          const saved = localStorage.getItem('phonon-volume')
-          if (saved) {
-            const localVol = Number(saved)
-            setVolume(localVol)
-            invoke('set_volume', { level: localVol / 100 }).catch(() => {})
-            return
-          }
-        }
-        setVolume(backendVol)
-        // Also persist the backend-restored volume to localStorage
-        localStorage.setItem('phonon-volume', String(backendVol))
-      }).catch(() => {})
-    }, 80)
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [])
-
-  // Persist volume to localStorage whenever it changes (hw-volume events, etc.)
-  useEffect(() => {
-    localStorage.setItem('phonon-volume', String(volume))
-  }, [volume])
-
-  // Listen for hardware volume changes from system (bidirectional sync)
-  useEffect(() => {
-    let unlistenFn: (() => void) | null = null
-    safeListen<number>('hw-volume', (event) => {
-      setVolume(Math.round(event.payload * 100))
-    }).then((fn) => { unlistenFn = fn }).catch(() => {})
-    return () => { if (unlistenFn) { try { unlistenFn() } catch {} } }
-  }, [])
-
   // Sync seekPct with playback position (skip during drag + lock period after seek)
   useEffect(() => {
     if (!draggingRef.current && !seekLockRef.current && durationRef.current) {
@@ -1956,23 +1979,8 @@ function PlayerBar({
     }
   }, [progress])
 
-  // Volume slider: 50ms throttle (spec §12 — "音量 50ms throttle").
-  // Leading edge fires immediately for real-time feedback; trailing edge
-  // commits the final value 50ms after the last drag tick. This replaces
-  // the old ad-hoc 60ms debounce which delayed the first invoke by 60ms.
-  // The hook keeps a ref to the latest callback so it always sees the
-  // current `volumeMode` without re-subscribing.
-  const throttledSetVolume = useThrottledCallback((level: number) => {
-    invoke('set_volume', { level }).catch(() => {})
-  }, 50)
-
   const handleVolume = (v: number) => {
-    setVolume(v)
-    localStorage.setItem('phonon-volume', String(v))
-    // Both HW and SW modes use the 50ms throttle. HW mode previously fired
-    // on every pixel (flooding the OS mixer); the throttle still gives
-    // immediate leading-edge feedback but caps the invoke rate.
-    throttledSetVolume(v / 100)
+    onVolumeChange(v)
   }
 
   const toggleVolumeMode = async () => {
@@ -1985,14 +1993,14 @@ function PlayerBar({
       if (newMode === 'Hardware') {
         try {
           const level = await invoke<number>('sync_volume_from_device')
-          setVolume(Math.round(level * 100))
+          onVolumeChange(Math.round(level * 100))
         } catch {
           const level = await invoke<number>('get_volume_level')
-          setVolume(Math.round(level * 100))
+          onVolumeChange(Math.round(level * 100))
         }
       } else {
         const level = await invoke<number>('get_volume_level')
-        setVolume(Math.round(level * 100))
+        onVolumeChange(Math.round(level * 100))
       }
     } catch (e) {
       console.error('Failed to toggle volume mode:', e)

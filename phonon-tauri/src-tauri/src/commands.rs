@@ -4426,7 +4426,10 @@ pub fn get_dsd_mode(state: State<'_, AppState>) -> Result<String, String> {
 // ── App Control ────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn quit_app(state: State<'_, AppState>) {
+pub fn quit_app(app: tauri::AppHandle, state: State<'_, AppState>) {
+    // Persist window geometry first — the tray-quit path bypasses
+    // CloseRequested, so without this the next launch restores stale bounds.
+    crate::save_main_window_geometry(&app);
     // Release the audio device (incl. exclusive-mode WASAPI) BEFORE the hard
     // exit — std::process::exit skips destructors.
     state.engine.stop();

@@ -1171,6 +1171,50 @@ fn take_cli_args() -> Vec<String> {
     CLI_ARGS.lock().unwrap().drain(..).collect()
 }
 
+/// Persist the main window's geometry (position/size + monitor scale factor).
+/// Ignored when maximized/minimized (keeps the un-maximized restore bounds;
+/// -32000-style minimized coordinates are rejected). Called on window close,
+/// hide-to-tray and app quit so the restored geometry never goes stale —
+/// previously only the window-X path saved it, making tray-quit sessions
+/// restore stale bounds on next launch.
+pub(crate) fn save_main_window_geometry(app: &tauri::AppHandle) -> Option<crate::state::AppSettings> {
+    let win = app.get_webview_window("main")?;
+    let is_maximized = win.is_maximized().unwrap_or(false);
+    let is_minimized = win.is_minimized().unwrap_or(false);
+    let scale = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or(1.0);
+    let state = app.state::<AppState>();
+    let snapshot = {
+        let mut s = state.settings.lock().unwrap();
+        if !is_maximized && !is_minimized {
+            if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
+                if pos.x > -1000
+                    && pos.y > -1000
+                    && size.width >= 400
+                    && size.height >= 300
+                {
+                    s.main_window_x = pos.x as f64;
+                    s.main_window_y = pos.y as f64;
+                    s.main_window_width = size.width as f64;
+                    s.main_window_height = size.height as f64;
+                    s.main_window_position_set = true;
+                    s.main_window_scale = scale;
+                }
+            }
+        }
+        s.main_window_maximized = is_maximized;
+        s.clone()
+    };
+    if let Err(e) = commands::save_settings_sync(&snapshot) {
+        log::error!("[window geometry] save_settings_sync failed: {}", e);
+    }
+    Some(snapshot)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // --console: attach to the launching terminal (or allocate a new one)
@@ -1311,6 +1355,12 @@ pub fn run() {
                         .frontend_reloading
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     log::info!("[page-load] Frontend ready — events resumed");
+                    // 页面就绪：撤掉启动用的亚克力背景（前端已自带不透明底色，
+                    // 继续保留亚克力只会增加合成开销 + Win10 拖动迟滞）
+                    #[cfg(target_os = "windows")]
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = window_vibrancy::clear_acrylic(&win);
+                    }
                     if let Some(win) = app.get_webview_window("main") {
                         let maximized = state
                             .settings
@@ -1754,8 +1804,13 @@ pub fn run() {
                         // Clamp position so at least 100px of the title bar
                         // stays on the nearest monitor. Prevents the window
                         // from getting lost after a monitor config change
-                        // (e.g. unplugging a secondary display).
+                        // (e.g. unplugging a secondary display). Also rescale
+                        // geometry when the target monitor's DPI differs from
+                        // the one saved — otherwise a 150%→100% (or docked/
+                        // undocked) change restores a wrong-sized window.
+                        let saved_scale = s.main_window_scale;
                         let (mut final_x, mut final_y) = (saved_x, saved_y);
+                        let (mut final_w, mut final_h) = (saved_w, saved_h);
                         if let Ok(monitors) = w.available_monitors() {
                             if !monitors.is_empty() {
                                 // Find which monitor the saved position is closest to
@@ -1779,6 +1834,20 @@ pub fn run() {
                                 if let Some(m) = best_monitor {
                                     let mpos = m.position();
                                     let msize = m.size();
+                                    let cur_scale = m.scale_factor();
+                                    if saved_scale > 0.0
+                                        && (cur_scale - saved_scale).abs() > 0.01
+                                    {
+                                        let ratio = cur_scale / saved_scale;
+                                        final_x = mpos.x
+                                            + ((saved_x - mpos.x) as f64 * ratio).round() as i32;
+                                        final_y = mpos.y
+                                            + ((saved_y - mpos.y) as f64 * ratio).round() as i32;
+                                        final_w =
+                                            ((saved_w as f64) * ratio).round().max(400.0) as u32;
+                                        final_h =
+                                            ((saved_h as f64) * ratio).round().max(300.0) as u32;
+                                    }
                                     let min_x = mpos.x;
                                     let min_y = mpos.y;
                                     // Leave at least 100px of title bar visible
@@ -1791,44 +1860,94 @@ pub fn run() {
                         }
 
                         let _ = w.set_position(PhysicalPosition::new(final_x, final_y));
-                        let _ = w.set_size(PhysicalSize::new(saved_w, saved_h));
+                        let _ = w.set_size(PhysicalSize::new(final_w, final_h));
                     }
                 }
+                // ── 启动动画：窗口从 ~88% 尺寸以 ease-out 展开到目标大小，
+                // 亚克力背景透过透明 webview 呈现模糊底色，页面加载完成后
+                // 前端 #root 淡入（app-boot-done）。maximized 恢复走原有
+                // 延迟最大化路径，跳过展开动画避免两段动画叠加。
+                let maximized_restore = app_handle
+                    .state::<AppState>()
+                    .settings
+                    .lock()
+                    .map(|s| s.main_window_maximized)
+                    .unwrap_or(false);
+                let anim_win = window.clone();
+                {
+                    #[cfg(target_os = "windows")]
+                    {
+                        // 亚克力模糊底色（webview 此刻透明，页面加载后由前端覆盖）
+                        let _ = window_vibrancy::apply_acrylic(
+                            &anim_win,
+                            Some((8, 8, 16, 120)),
+                        );
+                    }
+                    if !maximized_restore {
+                        #[cfg(target_os = "windows")]
+                        {
+                            let fpos = anim_win
+                                .outer_position()
+                                .unwrap_or(tauri::PhysicalPosition::new(0, 0));
+                            let fsize = anim_win
+                                .inner_size()
+                                .unwrap_or(tauri::PhysicalSize::new(1100, 750));
+                            let sw = ((fsize.width as f64) * 0.88).round() as i32;
+                            let sh = ((fsize.height as f64) * 0.92).round() as i32;
+                            let sx = fpos.x + ((fsize.width as i32) - sw) / 2;
+                            let sy = fpos.y + ((fsize.height as i32) - sh) / 2;
+                            let _ = anim_win.set_size(tauri::PhysicalSize::new(
+                                sw.max(400) as u32,
+                                sh.max(300) as u32,
+                            ));
+                            let _ = anim_win.set_position(tauri::PhysicalPosition::new(sx, sy));
+                            let thread_win = anim_win.clone();
+                            std::thread::spawn(move || {
+                                let frames = 16usize;
+                                let frame_ms = std::time::Duration::from_millis(15);
+                                for i in 1..=frames {
+                                    let t = i as f64 / frames as f64;
+                                    let e = 1.0 - (1.0 - t).powi(3); // ease-out cubic
+                                    let cw = (sw as f64
+                                        + (fsize.width as f64 - sw as f64) * e)
+                                        .round() as u32;
+                                    let ch = (sh as f64
+                                        + (fsize.height as f64 - sh as f64) * e)
+                                        .round() as u32;
+                                    let cx = (sx as f64
+                                        + (fpos.x as f64 - sx as f64) * e)
+                                        .round() as i32;
+                                    let cy = (sy as f64
+                                        + (fpos.y as f64 - sy as f64) * e)
+                                        .round() as i32;
+                                    let _ =
+                                        thread_win.set_size(tauri::PhysicalSize::new(cw, ch));
+                                    let _ = thread_win
+                                        .set_position(tauri::PhysicalPosition::new(cx, cy));
+                                    std::thread::sleep(frame_ms);
+                                }
+                                let _ = thread_win
+                                    .set_size(tauri::PhysicalSize::new(fsize.width, fsize.height));
+                                let _ = thread_win
+                                    .set_position(tauri::PhysicalPosition::new(fpos.x, fpos.y));
+                            });
+                        }
+                    }
+                    let _ = anim_win.show();
+                }
+
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        // Save position before closing, but ignore minimized positions (-32000 on Windows).
-                        // When maximized, don't overwrite the stored position/size with the maximized
-                        // geometry — keep the "restored" values so un-maximizing later uses the right
-                        // size. Only update the maximized flag.
-                        let is_maximized = w.is_maximized().unwrap_or(false);
-                        let is_minimized = w.is_minimized().unwrap_or(false);
-                        let s_clone = {
-                            let state = app_handle.state::<AppState>();
-                            let mut s = state.settings.lock().unwrap();
-                            if !is_maximized && !is_minimized {
-                                if let (Ok(pos), Ok(size)) = (w.outer_position(), w.inner_size()) {
-                                    if pos.x > -1000
-                                        && pos.y > -1000
-                                        && size.width >= 400
-                                        && size.height >= 300
-                                    {
-                                        s.main_window_x = pos.x as f64;
-                                        s.main_window_y = pos.y as f64;
-                                        s.main_window_width = size.width as f64;
-                                        s.main_window_height = size.height as f64;
-                                        s.main_window_position_set = true;
-                                    }
-                                }
-                            }
-                            s.main_window_maximized = is_maximized;
-                            s.clone()
-                        };
-                        if let Err(e) = commands::save_settings_sync(&s_clone) {
-                            log::error!("[main window close] save_settings_sync failed: {}", e);
-                        }
+                        // Save geometry (position/size + monitor scale) before
+                        // closing; maximized/minimized keep the stored restore
+                        // bounds and only update the maximized flag. The helper
+                        // already persists settings.json.
+                        let s_clone = save_main_window_geometry(&app_handle)
+                            .unwrap_or_else(|| {
+                                app_handle.state::<AppState>().settings.lock().unwrap().clone()
+                            });
+                        let close_to_tray = s_clone.close_to_tray;
                         let state = app_handle.state::<AppState>();
-                        let lock_result = state.settings.lock();
-                        let close_to_tray = lock_result.unwrap().close_to_tray;
                         if close_to_tray {
                             api.prevent_close();
                             let _ = w.hide();

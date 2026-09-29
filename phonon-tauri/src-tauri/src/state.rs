@@ -127,6 +127,11 @@ pub struct AppSettings {
     pub main_window_position_set: bool,
     /// Whether main window was maximized.
     pub main_window_maximized: bool,
+    /// Main window monitor scale factor at last save (0 = unknown).
+    /// Used to rescale restored geometry when the display DPI changes
+    /// between sessions (dock/undock, monitor swap, scaling change).
+    #[serde(default)]
+    pub main_window_scale: f64,
     /// DSP sub-config (nested; #[serde(default)] fills legacy defaults).
     #[serde(default)]
     pub dsp: DspSettings,
@@ -312,6 +317,7 @@ impl Default for AppSettings {
             main_window_height: 800.0,
             main_window_position_set: false,
             main_window_maximized: false,
+            main_window_scale: 0.0,
             dsp: DspSettings::default(),
             hotplug: HotplugSettings::default(),
             library: LibrarySettings::default(),
