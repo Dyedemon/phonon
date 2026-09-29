@@ -275,11 +275,11 @@ function App() {
     } catch { return false }
   })
   const [visMode, setVisModeState] = useState<VisMode>(() => {
-    const saved = localStorage.getItem('phonon-vis-mode')
-    if (saved === 'quality' || saved === 'none' || saved === 'depth3d' || saved === 'depth4d' || saved === 'depth5d') return saved
-    // 老版本 cosmos 的残留值，迁移到 quality
-    if (saved === 'cosmos') return 'quality'
-    return 'none'
+    try {
+      const saved = localStorage.getItem('phonon.visMode')
+      if (saved === 'classic' || saved === 'depth3d' || saved === 'off') return saved
+    } catch { return 'classic' }
+    return 'classic'
   })
   // 视觉增强总开关：每次启动应用都强制默认关闭（用户明确要求），与 visMode 的"上次选择"分离
   const [visActive, setVisActive] = useState<boolean>(false)

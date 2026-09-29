@@ -1,27 +1,7 @@
-﻿/* ── 启动淡入 ──
-   窗口以透明+亚克力创建：Rust 展开动画期间 webview 透明（html 背景让位），
-   亚克力模糊透出；React 首帧后 html 加 app-boot-done，#root 淡入浮现，
-   html 恢复不透明背景。*/
-html:not(.app-boot-done) {
-  background: transparent;
-}
-
-html:not(.app-boot-done) #root {
-  opacity: 0;
-}
-
-#root {
-  transition: opacity 0.3s ease-out;
-}
-
-/* ── 启动淡入 ──
-   主窗口以透明+亚克力创建：OS 窗口一次性显示（无 OS 级 resize，避免闪烁），
-   展开与淡入全部由 CSS 完成：
-   - html 启动期间半透明，透出亚克力模糊底色（仅主窗口，data-window 标记）
-   - .app 挂载时 scale(0.96)→1 + 淡入（无 fill-mode，动画结束即恢复
-     常规样式，不破坏 .app 的 background-attachment: fixed）
-   - #root 在 app-boot-done 后淡入
-*/
+﻿/* ── 启动淡入（主窗口专用，data-window 标记；当前为慢速检查版） ──
+   窗口以透明+亚克力一次性显示（无 OS 级 resize，避免闪烁）。
+   启动期间 html 半透明，透出亚克力模糊底色；React 首帧后 html 加
+   app-boot-done：#root 淡入浮现，html 恢复不透明。*/
 html[data-window='main'] {
   background: transparent;
 }

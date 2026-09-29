@@ -84,6 +84,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const hiSmRef = useRef(0)
   const beatPulseRef = useRef(0)
   const lastBeatRef = useRef(false)
+  const beatCooldownRef = useRef(0)
+  const startTimeRef = useRef(0)
+  const initFadeRef = useRef(0) // 启动淡入：0→1，前 1.5 秒
 
   // ─── 行星表面 shader ─── 超精细：地形8层 + 海洋高光 + 云影 + 极光 + 火山 + 城市光
   const planetMat = useMemo(() => new THREE.ShaderMaterial({
@@ -492,8 +495,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         alpha *= ringLight;
         col *= ringLight;
 
-        // 音乐响应
-        alpha *= (0.55 + uLow * 0.45 + uRms * 0.25);
+        // 音乐响应（极弱，避免闪烁）
+        alpha *= (0.6 + uLow * 0.08 + uRms * 0.04);
 
         gl_FragColor = vec4(col, alpha);
       }
@@ -890,26 +893,38 @@ export function NebulaCore({ audioRef, quality }: Props) {
   useFrame(({ clock }) => {
     const d = audioRef.current
     const t = clock.elapsedTime
+    // 记录启动时间
+    if (startTimeRef.current === 0) startTimeRef.current = t
+    const elapsed = t - startTimeRef.current
+    // 启动淡入：前 1.5 秒音频响应从 0 渐升到 1，避免进入瞬间闪烁
+    initFadeRef.current = Math.min(1, initFadeRef.current + 0.015)
+    const fade = initFadeRef.current
 
-    lowSmRef.current = lerp(lowSmRef.current, d.lowFreqAvg, 0.08)
-    rmsSmRef.current = lerp(rmsSmRef.current, d.rms, 0.06)
-    hiSmRef.current = lerp(hiSmRef.current, d.highFreqAvg, 0.05)
+    lowSmRef.current = lerp(lowSmRef.current, d.lowFreqAvg * fade, 0.08)
+    rmsSmRef.current = lerp(rmsSmRef.current, d.rms * fade, 0.06)
+    hiSmRef.current = lerp(hiSmRef.current, d.highFreqAvg * fade, 0.05)
 
-    if (d.beat && !lastBeatRef.current) beatPulseRef.current = 0.2
-    beatPulseRef.current *= 0.78
+    // beat 冷却：避免连续触发导致闪烁
+    beatCooldownRef.current = Math.max(0, beatCooldownRef.current - 1)
+    // 启动前 0.8 秒完全屏蔽 beat
+    if (elapsed > 0.8 && d.beat && !lastBeatRef.current && beatCooldownRef.current <= 0) {
+      beatPulseRef.current = 0.08 * fade
+      beatCooldownRef.current = 8 // 至少 8 帧冷却（约 130ms @60fps）
+    }
+    beatPulseRef.current *= 0.68
     lastBeatRef.current = d.beat
 
     const low = lowSmRef.current
     const rms = rmsSmRef.current
     const pulse = beatPulseRef.current
 
-    // 计算云阴影（简化：采样云层密度，用于行星表面阴影）
-    const cloudShadow = low * 0.08 + rms * 0.05
+    // 计算云阴影（极弱，避免行星表面闪烁）
+    const cloudShadow = low * 0.03 + rms * 0.02
 
     // 行星自转
     if (planetRef.current) {
       planetRef.current.rotation.y = t * 0.04
-      const scale = 1 + low * 0.01 + pulse * 0.005
+      const scale = 1 + low * 0.003 + pulse * 0.002
       planetRef.current.scale.setScalar(scale)
       const mat = planetRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
@@ -928,20 +943,20 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // 内层大气
     if (atmoInnerRef.current) {
       atmoInnerRef.current.rotation.y = -t * 0.025
-      const scale = 1.01 + low * 0.01 + pulse * 0.005
+      const scale = 1.01 + low * 0.003 + pulse * 0.002
       atmoInnerRef.current.scale.setScalar(scale)
       const mat = atmoInnerRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.4 + low * 0.15 + rms * 0.08
+      mat.uniforms.uIntensity.value = 0.4 + low * 0.05 + rms * 0.02
       mat.uniforms.uLow.value = low
     }
 
     // 外层大气
     if (atmoOuterRef.current) {
       atmoOuterRef.current.rotation.y = t * 0.012
-      const scale = 1.12 + low * 0.02 + pulse * 0.01
+      const scale = 1.12 + low * 0.005 + pulse * 0.003
       atmoOuterRef.current.scale.setScalar(scale)
       const mat = atmoOuterRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.15 + low * 0.1
+      mat.uniforms.uIntensity.value = 0.15 + low * 0.03
       mat.uniforms.uLow.value = low
     }
 
@@ -960,7 +975,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       ringRef.current.rotation.z = Math.sin(t * 0.04) * 0.012
       const mat = ringRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.35 + low * 0.12 + rms * 0.06 + pulse * 0.05
+      mat.uniforms.uIntensity.value = 0.35 + low * 0.04 + rms * 0.02 + pulse * 0.015
       mat.uniforms.uLow.value = low
     }
 
@@ -972,12 +987,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uTime.value = t
     }
 
-    // 远处弥漫云
+    // 远处弥漫云（极弱音频响应，避免全屏闪烁）
     if (cloudRef.current) {
       cloudRef.current.rotation.y = t * 0.008
       const mat = cloudRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.2 + hiSmRef.current * 0.1 + low * 0.05
+      mat.uniforms.uIntensity.value = 0.2 + hiSmRef.current * 0.03 + low * 0.02
     }
 
     // 卫星1：绕行星公转（近，快）

@@ -24,6 +24,7 @@ export function StarField({ audioRef, quality }: Props) {
   const starsRef = useRef<THREE.Points>(null)
   const twinkleRef = useRef<THREE.Points>(null)
   const hiSmRef = useRef(0)
+  const initFadeRef = useRef(0)
 
   const qScale = qualityScale(quality)
   const STAR_COUNT = Math.floor(2000 * qScale)
@@ -177,7 +178,10 @@ export function StarField({ audioRef, quality }: Props) {
   useFrame(({ clock }) => {
     const d = audioRef.current
     const t = clock.elapsedTime
-    hiSmRef.current = lerp(hiSmRef.current, d.highFreqAvg, 0.08)
+    // 启动淡入
+    initFadeRef.current = Math.min(1, initFadeRef.current + 0.012)
+    const fade = initFadeRef.current
+    hiSmRef.current = lerp(hiSmRef.current, d.highFreqAvg * fade, 0.08)
     const hi = hiSmRef.current
 
     // 缓慢整体旋转
@@ -185,14 +189,14 @@ export function StarField({ audioRef, quality }: Props) {
       starsRef.current.rotation.y = t * 0.01
       const mat = starsRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.65 + hi * 0.12
+      mat.uniforms.uIntensity.value = 0.65 + hi * 0.05
     }
 
     if (twinkleRef.current) {
       twinkleRef.current.rotation.y = -t * 0.015
       const mat = twinkleRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.35 + hi * 0.2
+      mat.uniforms.uIntensity.value = 0.35 + hi * 0.08
     }
   })
 

@@ -82,6 +82,12 @@ function downsampleWaveform128(src: number[]): Float32Array {
   return out
 }
 
+/** 安全数值：NaN/Infinity → 0，钳制到 [0, 1] */
+function safeVal(v: number, min = 0, max = 1): number {
+  if (typeof v !== 'number' || !isFinite(v)) return 0
+  return Math.min(max, Math.max(min, v))
+}
+
 /**
  * 单通道订阅：返回一个可变 ref，每当主窗口 push audio-features 事件时
  * ref 内容就地更新（不是返回新对象）。场景里每帧读 ref.current 做 lerp。
@@ -100,27 +106,29 @@ export function useAudioDataRef() {
       // spectrum upsampling
       const spec = upsampleSpectrum64(f.spectrum ?? [])
       for (let i = 0; i < 64; i++) {
-        // 指数平滑
-        prev.spectrum64[i] = prev.spectrum64[i] * 0.55 + spec[i] * 0.45
+        // 指数平滑 + NaN 保护 + 钳制
+        const v = safeVal(spec[i])
+        prev.spectrum64[i] = prev.spectrum64[i] * 0.55 + v * 0.45
       }
 
       const wf = downsampleWaveform128(f.waveform ?? [])
       for (let i = 0; i < 128; i++) {
-        prev.waveform128[i] = prev.waveform128[i] * 0.7 + wf[i] * 0.3
+        const v = safeVal(wf[i], -1, 1)
+        prev.waveform128[i] = prev.waveform128[i] * 0.7 + v * 0.3
       }
 
       const chroma = f.chroma ?? []
       for (let i = 0; i < 12; i++) {
-        const v = typeof chroma[i] === 'number' ? chroma[i] : 0
+        const v = safeVal(typeof chroma[i] === 'number' ? chroma[i] : 0)
         prev.chroma12[i] = prev.chroma12[i] * 0.65 + v * 0.35
       }
 
-      prev.rms = prev.rms * 0.7 + (f.rms ?? 0) * 0.3
-      prev.peak = prev.peak * 0.85 + (f.peak ?? 0) * 0.15
-      prev.centroidHz = prev.centroidHz * 0.7 + (f.spectral_centroid_hz ?? 0) * 0.3
+      prev.rms = prev.rms * 0.7 + safeVal(f.rms ?? 0) * 0.3
+      prev.peak = prev.peak * 0.85 + safeVal(f.peak ?? 0) * 0.15
+      prev.centroidHz = prev.centroidHz * 0.7 + safeVal(f.spectral_centroid_hz ?? 0, 0, 20000) * 0.3
 
       // onset: accumulate 触发值，rAF 里每帧 decay 15%
-      const on = f.onset ?? 0
+      const on = safeVal(f.onset ?? 0)
       if (on > 0.02) onsetAccumRef.current = Math.max(onsetAccumRef.current, on)
       prev.onset = Math.max(prev.onset * 0.85, onsetAccumRef.current)
       onsetAccumRef.current *= 0.85
@@ -130,11 +138,11 @@ export function useAudioDataRef() {
 
       let lowSum = 0
       for (let i = 0; i < 16; i++) lowSum += prev.spectrum64[i]
-      prev.lowFreqAvg = lowSum / 16
+      prev.lowFreqAvg = safeVal(lowSum / 16)
 
       let hiSum = 0
       for (let i = 50; i < 64; i++) hiSum += prev.spectrum64[i]
-      prev.highFreqAvg = hiSum / 14
+      prev.highFreqAvg = safeVal(hiSum / 14)
     }
     window.addEventListener('audio-features', handler as EventListener)
     return () => window.removeEventListener('audio-features', handler as EventListener)

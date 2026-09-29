@@ -140,7 +140,6 @@ export default function Depth3DPage({
 
         {sceneSettings.theme === 'rhythm' && (
           <>
-            <StarField audioRef={audioRef} quality={sceneSettings.quality} />
             <RhythmVisualizer audioRef={audioRef} />
           </>
         )}

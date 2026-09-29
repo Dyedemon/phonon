@@ -327,7 +327,7 @@ export function RhythmVisualizer({ audioRef }: Props) {
     nextIdx: 0,
   }), [])
 
-  // 轨道底板（深色梯形，增加层次感）
+  // 轨道底板（深色梯形，用简单材质保证可见）
   const trackFloorGeo = useMemo(() => {
     const shape = new THREE.Shape()
     shape.moveTo(-NEAR_WIDTH / 2, HIT_LINE_Z)
@@ -337,35 +337,6 @@ export function RhythmVisualizer({ audioRef }: Props) {
     shape.closePath()
     return new THREE.ShapeGeometry(shape)
   }, [])
-  const trackFloorMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    uniforms: {
-      uTime: { value: 0 },
-    },
-    vertexShader: /* glsl */`
-      varying float vDepth;
-      void main() {
-        vDepth = (2.0 - position.y) / 22.0;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform float uTime;
-      varying float vDepth;
-      void main() {
-        float fade = 1.0 - vDepth * 0.5;
-        fade = max(0.0, fade);
-        // 横向条纹（扫描线效果）
-        float scan = fract(-vDepth * 12.0 - uTime * 0.3);
-        scan = smoothstep(0.0, 0.3, scan) * 0.15;
-        vec3 col = mix(vec3(0.06, 0.08, 0.15), vec3(0.1, 0.06, 0.18), vDepth * 0.6);
-        float alpha = fade * (0.35 + scan);
-        gl_FragColor = vec4(col, alpha);
-      }
-    `,
-  }), [])
 
   // 轨道线几何体（用梯形）
   const laneLinesGeo = useMemo(() => {
@@ -374,7 +345,7 @@ export function RhythmVisualizer({ audioRef }: Props) {
       const nearX = laneX(i, HIT_LINE_Z)
       const farX = laneX(i, FAR_LINE_Z)
       const shape = new THREE.Shape()
-      const lineWidth = 0.04
+      const lineWidth = 0.06
       shape.moveTo(nearX - lineWidth, HIT_LINE_Z)
       shape.lineTo(nearX + lineWidth, HIT_LINE_Z)
       shape.lineTo(farX + lineWidth * 0.3, FAR_LINE_Z)
@@ -523,8 +494,6 @@ export function RhythmVisualizer({ audioRef }: Props) {
     // 轨道线
     const laneLineMatAny = laneLineMat as THREE.ShaderMaterial
     laneLineMatAny.uniforms.uTime.value = t
-    const trackFloorMatAny = trackFloorMat as THREE.ShaderMaterial
-    trackFloorMatAny.uniforms.uTime.value = t
     for (let i = 0; i < LANE_COUNT; i++) {
       laneFlashRef.current[i] *= 0.88
     }
@@ -614,12 +583,14 @@ export function RhythmVisualizer({ audioRef }: Props) {
   return (
     <>
       <group ref={groupRef} position={[0, 0, 0]}>
-        {/* 轨道底板 */}
-        <mesh geometry={trackFloorGeo} material={trackFloorMat} position={[0, 0.01, 0]} rotation={[Math.PI / 2, 0, 0]} />
+        {/* 轨道底板（深色不透明，确保场景可见） */}
+        <mesh geometry={trackFloorGeo} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <meshBasicMaterial color="#0a0d1a" />
+        </mesh>
 
         {/* 轨道线（梯形透视） */}
         {laneLinesGeo.map((geo, i) => (
-          <mesh key={`lane-${i}`} geometry={geo} material={laneLineMat} position={[0, 0.02, 0]} rotation={[Math.PI / 2, 0, 0]} />
+          <mesh key={`lane-${i}`} geometry={geo} material={laneLineMat} position={[0, 0.01, 0]} rotation={[Math.PI / 2, 0, 0]} />
         ))}
 
         {/* 判定线 */}
