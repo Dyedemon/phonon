@@ -115,10 +115,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phonon-${{ runner.os }}
+          # Bundles land in the WORKSPACE-ROOT target dir (src-tauri is a
+          # member of the root Cargo workspace), not under phonon-tauri/.
           path: |
-            phonon-tauri/src-tauri/target/release/bundle/deb/*.deb
-            phonon-tauri/src-tauri/target/release/bundle/appimage/*.AppImage
-            phonon-tauri/src-tauri/target/release/bundle/dmg/*.dmg
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/dmg/*.dmg
           if-no-files-found: ignore
           retention-days: 14
 
