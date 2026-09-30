@@ -23,7 +23,7 @@
         "maximized": false,
         "center": true,
         "visible": false,
-        "transparent": true,
+        "backgroundColor": "#05050c",
         "devtools": false,
         "decorations": false
       }

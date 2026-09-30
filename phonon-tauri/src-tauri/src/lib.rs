@@ -1184,18 +1184,6 @@ fn show_main_window(app: tauri::AppHandle) {
     }
 }
 
-/// 前端启动淡入完成后调用：撤掉窗口的亚克力背景。
-/// 继续保留只会增加合成开销（Win10 上还会造成窗口拖动迟滞），
-/// 而此时界面已完全不透明，视觉上无差别。
-#[tauri::command]
-fn clear_boot_acrylic(app: tauri::AppHandle) {
-    #[cfg(target_os = "windows")]
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = window_vibrancy::clear_acrylic(&win);
-    }
-    #[cfg(not(target_os = "windows"))]
-    let _ = app;
-}
 
 /// Persist the main window's geometry (position/size + monitor scale factor).
 /// Ignored when maximized/minimized (keeps the un-maximized restore bounds;
@@ -1379,12 +1367,6 @@ pub fn run() {
                         .frontend_reloading
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     log::info!("[page-load] Frontend ready — events resumed");
-                    // 页面就绪：撤掉启动用的亚克力背景（前端已自带不透明底色，
-                    // 继续保留亚克力只会增加合成开销 + Win10 拖动迟滞）
-                    #[cfg(target_os = "windows")]
-                    if let Some(win) = app.get_webview_window("main") {
-                        let _ = window_vibrancy::clear_acrylic(&win);
-                    }
                     if let Some(win) = app.get_webview_window("main") {
                         let maximized = state
                             .settings
@@ -1405,7 +1387,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Boot
             show_main_window,
-            clear_boot_acrylic,
             // Playback
             commands::play,
             commands::toggle_play_pause,
@@ -1890,21 +1871,13 @@ pub fn run() {
                         let _ = w.set_size(PhysicalSize::new(final_w, final_h));
                     }
                 }
-                // ── 启动序列：亚克力背景 + 一次性显示。展开/淡入动画全部在
-                // 前端 CSS 内完成（对透明窗口做 OS 级 resize 会触发 DWM
-                // 重组合导致整窗闪烁，这正是此前“闪三下”的原因）。
-                // 窗口在创建时即处于最终几何（restore 已完成），此处仅应用
-                // 亚克力并显示一次；页面加载完毕后由前端触发清除亚克力。
+                // ── 启动序列：窗口保持隐藏，直到前端启动层完成首次绘制后
+                // 调用 show_main_window —— 提前 show 会露出 WebView2 的默认
+                // 白色底。淡入由前端 CSS 完成。亚克力方案已撤：其 AccentFlags
+                // 缺少 DRAW_ALL_LAYERS 会导致整窗无法接收鼠标输入，且与持续
+                // 重绘的 WebGL 页面叠加会引发全窗闪烁。
                 let anim_win = window.clone();
                 {
-                    #[cfg(target_os = "windows")]
-                    {
-                        // 亚克力模糊底色（webview 启动层为半透明，可透出）
-                        let _ = window_vibrancy::apply_acrylic(
-                            &anim_win,
-                            Some((8, 8, 16, 120)),
-                        );
-                    }
                     // 兜底：若前端异常导致永不调用 show_main_window，
                     // 3 秒后强制显示（宁可暗屏也不白屏/无窗）。
                     let safety_win = anim_win.clone();

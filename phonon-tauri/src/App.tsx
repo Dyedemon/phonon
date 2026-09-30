@@ -171,24 +171,18 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
   // ── 启动淡入 ──
-  // 窗口以透明+亚克力背景一次性显示（OS 窗口不再 resize，杜绝闪烁）。
-  // 双 rAF 确认首帧绘制后：标记 app-boot-done（html 恢复、#root 淡入），
-  // 并在淡入完成后通知后端撤掉亚克力（避免持续合成开销与 Win10 拖动迟滞）。
+  // 窗口隐藏创建，前端启动层完成首次绘制后才显示（杜绝 WebView2 白底）。
+  // 双 rAF 确认首帧绘制后标记 app-boot-done：#root 从透明淡入浮现。
   useEffect(() => {
     let raf2 = 0
-    let clearTimer: ReturnType<typeof setTimeout> | undefined
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
         document.documentElement.classList.add('app-boot-done')
-        clearTimer = setTimeout(() => {
-          invoke('clear_boot_acrylic').catch(() => {})
-        }, 3200)
       })
     })
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
-      if (clearTimer) clearTimeout(clearTimer)
     }
   }, [])
 
