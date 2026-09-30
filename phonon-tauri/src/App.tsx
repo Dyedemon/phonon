@@ -170,6 +170,37 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
+  // ── 启动层交接 ──
+  // 静态启动层（index.html，毛玻璃 + 极光漂移）在首帧即可见；此处等 React
+  // 首帧提交（双 rAF）且满足最短展示时长后：标记 app-booted（启动层淡出、
+  // 主界面淡入），延时把启动层从 DOM 移除——backdrop-filter 常驻会持续
+  // 消耗合成资源，移除后零残留。幂等：HMR/StrictMode 重复执行无副作用。
+  useEffect(() => {
+    let raf2 = 0
+    let t1: ReturnType<typeof setTimeout> | undefined
+    let t2: ReturnType<typeof setTimeout> | undefined
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const splash = () => document.getElementById('boot-splash')
+        const booted = () => document.documentElement.classList.contains('app-booted')
+        if (booted() || !splash()) return // 已交接（HMR 场景）
+        const started = (window as unknown as { __bootStart?: number }).__bootStart ?? 0
+        const remain = Math.max(0, 600 - (performance.now() - started))
+        t1 = setTimeout(() => {
+          document.documentElement.classList.add('app-booted')
+          splash()?.classList.add('boot-out')
+          t2 = setTimeout(() => splash()?.remove(), 900)
+        }, remain)
+      })
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+      if (t1) clearTimeout(t1)
+      if (t2) clearTimeout(t2)
+    }
+  }, [])
+
   // ═══════════════════════════════════════════════════════════════
   //  E2E 测试专用钩子（零副作用）
   //
