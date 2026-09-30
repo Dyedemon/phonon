@@ -1100,9 +1100,9 @@ html[data-vis-active='true'][data-vis-mode='quality'] .progress-tooltip {
    漂移用极慢 keyframes(47~101s),只动 transform/opacity,合成器友好。
 
    静音可见性:光斑浓度按"无音乐也有质感"设计——基础不透明度较高,
-   并由 --vis-idle 的常驻呼吸动画(12~18s)赋予缓慢明暗起伏,音乐响起时
+   并以整层极缓慢的 transform 呼吸(17s 一个来回)赋予明暗起伏,音乐响起时
    --vis-energy / --vis-bass 等再叠加鼓点响应。 */
-@property.vis-ambient-layer {
+.vis-ambient-layer {
   position: fixed;
   inset: 0;
   z-index: 0;
