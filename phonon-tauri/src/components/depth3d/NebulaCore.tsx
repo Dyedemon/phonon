@@ -127,9 +127,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float mountains = ridge(p * 3.0, 5) * 0.5;
         float hills = fbm(p * 6.0, 5) * 0.25;
         float microDetail = fbm(p * 18.0, 4) * 0.08;
+        // 注意：GLSL 不允许在初始化表达式中引用正在声明的变量。
+        // 旧代码在 height 的初始化里引用了 height 自身（height * 0.0 + ...），
+        // 导致整个片元着色器编译失败，星球退化成默认材质。
         float height = continents
           + mountains * smoothstep(0.42, 0.58, continents)
-          + hills * smoothstep(0.5, 0.65, height * 0.0 + continents)
+          + hills * smoothstep(0.5, 0.65, continents)
           + microDetail;
 
         // 海岸线精细度
@@ -470,8 +473,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vec3 colC = vec3(0.6, 0.8, 1.0);
 
         // 环的光照（朝向光的一侧更亮）
+        // 环位于 XZ 平面：方向向量与光源方向的水平分量都是 vec2
+        // （旧代码 dot(vec3, uLightDir.xz) 类型不匹配，着色器编译失败）
         vec3 ringNormal = vec3(0.0, 1.0, 0.0);
-        float lightAngle = dot(normalize(vec3(cos(angle), 0.0, sin(angle))), uLightDir.xz);
+        float lightAngle = dot(vec2(cos(angle), sin(angle)), uLightDir.xz);
         float ringLight = 0.6 + 0.4 * max(0.0, lightAngle);
 
         float alpha = 0.0;

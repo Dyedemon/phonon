@@ -639,6 +639,24 @@ function RhythmHUD({
   const recent = hitEffects.slice(-3).reverse()
   const latest = recent[0]
 
+  // 判定文字的弹出动画 keyframes：必须注入 document.head。
+  // 直接放在 <group>（R3F 画布树）里会被 R3F 当作 THREE 对象解析，
+  // 抛 "Style is not part of the THREE namespace" 并导致整个场景卸载白屏。
+  useEffect(() => {
+    const id = 'phonon-rhythm-keyframes'
+    if (document.getElementById(id)) return
+    const el = document.createElement('style')
+    el.id = id
+    el.textContent = `
+      @keyframes judgePop {
+        0% { transform: scale(0.7); opacity: 0; }
+        50% { transform: scale(1.15); }
+        100% { transform: scale(1); opacity: 1; }
+      }
+    `
+    document.head.appendChild(el)
+  }, [])
+
   return (
     <group>
       {/* 右侧 Combo */}
@@ -757,14 +775,6 @@ function RhythmHUD({
           </div>
         </div>
       </Html>
-
-      <style>{`
-        @keyframes judgePop {
-          0% { transform: scale(0.7); opacity: 0; }
-          50% { transform: scale(1.15); }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
     </group>
   )
 }
