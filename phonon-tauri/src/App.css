@@ -1,18 +1,4 @@
-﻿/* ── 启动淡入（主窗口专用，data-window 标记） ──
-   窗口隐藏创建，前端启动层完成首次绘制后才显示（杜绝 WebView2 白底）。
-   淡入用 CSS animation 挂在 #root 上：每次页面加载必然重播一次，
-   不依赖 html 类切换（HMR/热更新也不会漏）。*/
-html[data-window='main'] #root {
-  animation: app-fade-in 0.32s ease-out 1;
-}
-
-@keyframes app-fade-in {
-  from {
-    opacity: 0;
-  }
-}
-
-.app {
+﻿.app {
   display: flex;
   flex-direction: column;
   height: 100vh;

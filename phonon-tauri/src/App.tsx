@@ -170,22 +170,6 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
-  // ── 启动淡入 ──
-  // 窗口隐藏创建，前端启动层完成首次绘制后才显示（杜绝 WebView2 白底）。
-  // 双 rAF 确认首帧绘制后标记 app-boot-done：#root 从透明淡入浮现。
-  useEffect(() => {
-    let raf2 = 0
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        document.documentElement.classList.add('app-boot-done')
-      })
-    })
-    return () => {
-      cancelAnimationFrame(raf1)
-      cancelAnimationFrame(raf2)
-    }
-  }, [])
-
   // ═══════════════════════════════════════════════════════════════
   //  E2E 测试专用钩子（零副作用）
   //
