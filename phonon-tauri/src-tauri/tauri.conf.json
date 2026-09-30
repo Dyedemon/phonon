@@ -52,7 +52,8 @@
     ],
     "resources": {
       "../../THIRDPARTY_LICENSES.txt": "THIRDPARTY_LICENSES.txt",
-      "../../ASIO_TRADEMARK_NOTICE.txt": "ASIO_TRADEMARK_NOTICE.txt"
+      "../../ASIO_TRADEMARK_NOTICE.txt": "ASIO_TRADEMARK_NOTICE.txt",
+      "../../plugins/vis": "plugins/vis"
     },
     "externalBin": [],
     "macOS": {

@@ -16,6 +16,7 @@ import TitleBar from './components/TitleBar'
 import LyricsPage from './components/LyricsPage'
 import VisualizerPage from './components/VisualizerPage'
 import VisModeButton, { type VisMode } from './components/VisModeButton'
+import { syncVisPluginStyles, startVisLoop, stopVisLoop } from './api/visModeHost'
 // three.js/R3F stack is only needed on the Depth3D tab — keep it out of the
 // initial bundle (roughly halves the main chunk size).
 const Depth3DPage = lazy(() => import('./components/Depth3DPage'))
@@ -271,7 +272,9 @@ function App() {
     try {
       const raw = localStorage.getItem('phonon-enabled-vis-scripts')
       const arr = raw ? JSON.parse(raw) : []
-      return Array.isArray(arr) && arr.length > 0
+      // 只认视觉升华插件本身（vis_mode.js）：启用其他可视化脚本
+      // （纯 canvas 2D 脚本）不应召唤视觉升华按钮，也不该注入它的样式。
+      return Array.isArray(arr) && arr.includes('vis_mode.js')
     } catch { return false }
   })
   const [visMode, setVisModeState] = useState<VisMode>(() => {
@@ -738,6 +741,26 @@ function App() {
       setVisMode('depth3d')
     }
   }, [visActive, setVisMode])
+
+  // ── 视觉升华插件（plugins/vis/vis_mode.js）────────────────────────
+  // 插件自带全部 CSS（按钮 / 面板 / 质感模式 / 氛围光斑），宿主只负责
+  // 注入/移除样式与驱动帧循环——这就是"视觉"的统一体系：内置 3D 维度页
+  // 和插件质感效果共存，插件按同一契约即可扩展。
+  // 加载失败（文件缺失/损坏）时自愈为禁用，避免渲染出无样式按钮。
+  useEffect(() => {
+    void syncVisPluginStyles(visPluginEnabled).then((ok) => {
+      if (!ok && visPluginEnabled) {
+        console.warn('[vis] 视觉升华插件加载失败，已自动禁用')
+        setVisPluginEnabled(false)
+      }
+    })
+  }, [visPluginEnabled])
+
+  // 插件帧循环：质感模式激活期间运行，驱动插件的音频呼吸（--vis-* 变量）
+  useEffect(() => {
+    if (visActive && visMode === 'quality') startVisLoop()
+    else stopVisLoop()
+  }, [visActive, visMode])
 
   // Initialisation: run once after mount with a small delay so Tauri's
   // frontend callback table is fully populated before issuing any commands.
@@ -1618,7 +1641,7 @@ function App() {
       try {
         const raw = localStorage.getItem('phonon-enabled-vis-scripts')
         const arr = raw ? JSON.parse(raw) : []
-        const enabled = Array.isArray(arr) && arr.length > 0
+        const enabled = Array.isArray(arr) && arr.includes('vis_mode.js')
         setVisPluginEnabled(enabled)
         if (!enabled) {
           // 总开关关闭 → 一键关闭所有视觉增强，恢复默认界面

@@ -100,6 +100,17 @@ if (Test-Path $tauriResources) {
     }
 }
 
+# Stage the visual-mode plugin (runtime loads <install>\plugins\vis\*.js)
+$visSrc = Join-Path $projectRoot "plugins\vis"
+if (Test-Path $visSrc) {
+    $visDst = Join-Path $stagingDir "plugins\vis"
+    New-Item -ItemType Directory -Path $visDst -Force | Out-Null
+    Get-ChildItem $visSrc -File | ForEach-Object {
+        Copy-Item $_.FullName $visDst -Force
+        Write-Host "  plugins\vis\$($_.Name) ($($_.Length) bytes)" -ForegroundColor Gray
+    }
+}
+
 # ---- Step 4: Create zip ----
 Write-Host "`n[4/7] Creating app bundle zip..." -ForegroundColor Yellow
 
