@@ -122,11 +122,14 @@ export function NebulaCore({ audioRef, quality }: Props) {
       void main() {
         vec3 p = normalize(vPos);
 
-        // ── 地形高度（8 层 fbm + 山脊 + 细节） ──
-        float continents = fbm(p * 1.2, 6) * 0.9;
-        float mountains = ridge(p * 3.0, 5) * 0.5;
-        float hills = fbm(p * 6.0, 5) * 0.25;
-        float microDetail = fbm(p * 18.0, 4) * 0.08;
+        // ── 地形高度（fbm + 山脊 + 细节） ──
+        // 八度数经过性能预算削减：原始版本每像素 33+ 次 fbm，
+        // 在 4K/dpr2 下帧时间超出 WebView2 合成容忍度 → 间歇输出
+        // 纯黑帧（整窗闪屏）。削减八度后观感差异很小，帧率恢复正常。
+        float continents = fbm(p * 1.2, 4) * 0.9;
+        float mountains = ridge(p * 3.0, 3) * 0.5;
+        float hills = fbm(p * 6.0, 3) * 0.25;
+        float microDetail = fbm(p * 18.0, 2) * 0.08;
         // 注意：GLSL 不允许在初始化表达式中引用正在声明的变量。
         // 旧代码在 height 的初始化里引用了 height 自身（height * 0.0 + ...），
         // 导致整个片元着色器编译失败，星球退化成默认材质。
@@ -136,7 +139,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
           + microDetail;
 
         // 海岸线精细度
-        float coast = fbm(p * 8.0, 4) * 0.06;
+        float coast = fbm(p * 8.0, 2) * 0.06;
         height += coast * smoothstep(0.44, 0.52, height);
 
         // ── 分层配色（10 层地形） ──
@@ -187,14 +190,14 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vec3 halfVec = normalize(uLightDir + viewDir);
         float spec = pow(max(0.0, dot(N, halfVec)), 64.0);
         // 海浪微表面扰动高光
-        float waveN = fbm(p * 25.0 + vec3(uTime * 0.02, 0, uTime * 0.015), 3);
+        float waveN = fbm(p * 25.0 + vec3(uTime * 0.02, 0, uTime * 0.015), 2);
         float specMask = spec * isOcean * lit * (0.6 + waveN * 0.4);
         vec3 oceanSpec = vec3(0.9, 0.95, 1.0) * specMask * 0.8;
 
         // ── 极光（夜面高纬度） ──
         float auroraLat = smoothstep(0.5, 0.8, abs(p.y));
         float auroraBand = sin(p.y * 12.0 + uTime * 0.3) * 0.5 + 0.5;
-        float auroraN = fbm(p * 6.0 + vec3(0, uTime * 0.1, 0), 4);
+        float auroraN = fbm(p * 6.0 + vec3(0, uTime * 0.1, 0), 3);
         float aurora = auroraLat * auroraBand * auroraN * (1.0 - halfLit) * 0.6;
         vec3 auroraCol1 = vec3(0.2, 1.0, 0.5);
         vec3 auroraCol2 = vec3(0.4, 0.6, 1.0);
@@ -205,12 +208,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
         // ── 火山热点（山脉区域，夜面可见） ──
         float volcanoMask = smoothstep(0.72, 0.8, height) * ridge(p * 5.0, 3) * 0.5;
-        float volcanoN = fbm(p * 15.0, 3);
+        float volcanoN = fbm(p * 15.0, 2);
         float volcanoes = smoothstep(0.65, 0.78, volcanoN) * volcanoMask;
         vec3 volcanoGlow = vec3(1.0, 0.35, 0.08) * volcanoes * (1.0 - lit) * 0.4;
 
         // ── 夜面城市光 ──
-        float cityN = fbm(p * 22.0, 5);
+        float cityN = fbm(p * 22.0, 3);
         float cities = smoothstep(0.68, 0.74, cityN) * (1.0 - halfLit);
         cities *= smoothstep(0.48, 0.58, height);
         // 大城市中心更亮
@@ -270,11 +273,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
       // 云的密度函数
       float cloudDensity(vec3 p) {
         // 主云系
-        float c1 = fbm(p * 2.2 + vec3(uTime * 0.035, 0.0, 0.0), 6);
+        float c1 = fbm(p * 2.2 + vec3(uTime * 0.035, 0.0, 0.0), 4);
         // 碎云
-        float c2 = fbm(p * 5.0 + vec3(-uTime * 0.07, uTime * 0.015, uTime * 0.02), 5) * 0.5;
+        float c2 = fbm(p * 5.0 + vec3(-uTime * 0.07, uTime * 0.015, uTime * 0.02), 3) * 0.5;
         // 微结构
-        float c3 = fbm(p * 12.0, 4) * 0.2;
+        float c3 = fbm(p * 12.0, 2) * 0.2;
         float c = c1 * 0.6 + c2 * 0.3 + c3 * 0.1;
         // 云带分布（沿纬度有疏密变化）
         float latBand = 0.7 + 0.3 * sin(p.y * 4.0 + 1.2);
