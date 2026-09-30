@@ -87,7 +87,7 @@ export default function Depth3DPage({
       <Canvas
         shadows
         dpr={[1, dprCap * dprScale]}
-        frameloop="always"
+        frameloop="demand"
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ position: [0, 1.5, 13], fov: 60, near: 0.1, far: 200 }}
         style={{ position: 'absolute', inset: 0, zIndex: 0 }}
@@ -101,6 +101,9 @@ export default function Depth3DPage({
           audioRef={audioRef}
           theme={sceneSettings.theme}
         />
+
+        {/* 帧率上限：240Hz 屏幕上把渲染节流到 60fps（见组件注释） */}
+        <FramerateCap fps={60} />
 
         {/* 帧时间调节器：GPU 跟不上时自动降低渲染倍率 */}
         <FrameGovernor
@@ -243,6 +246,32 @@ export default function Depth3DPage({
 }
 
 // ========== 相机 rig：target 轻微浮动 ==========
+/** 帧率上限：把渲染节流到指定帧率（默认 60）。
+ *
+ *  rAF 跟随显示器刷新率——在 240Hz 屏幕上 R3F 会尝试每秒渲染 240 帧，
+ *  每帧预算只有 4.17ms，3D 场景（尤其星云主题）根本跑不进这个窗口，
+ *  帧超时会让合成器读到空缓冲（整窗闪黑）。节流到 60fps 后每帧预算
+ *  放大到 16.7ms，且对这种可视化场景观感无差别。
+ *  配合 Canvas 的 frameloop="demand"：只有 invalidate() 时才渲染。 */
+function FramerateCap({ fps = 60 }: { fps?: number }) {
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    let raf = 0
+    let last = 0
+    const interval = 1000 / fps - 1
+    const loop = (t: number) => {
+      raf = requestAnimationFrame(loop)
+      if (t - last >= interval) {
+        last = t
+        invalidate()
+      }
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [invalidate, fps])
+  return null
+}
+
 /** 帧时间调节器：滚动统计平均帧时间，超标则请求降档、流畅则请求升档。
  *  仅统计、不渲染；配合外层 dprScale 使用。 */
 function FrameGovernor({ onAdjust }: { onAdjust: (delta: number) => void }) {
