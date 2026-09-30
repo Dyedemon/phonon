@@ -1097,8 +1097,12 @@ html[data-vis-active='true'][data-vis-mode='quality'] .progress-tooltip {
    activate() 在 #root 首子节点注入 <div class="vis-ambient-layer">(与噪点
    层同栈位,内容之下)。五个光斑的颜色全部由 --accent / --accent2 派生,
    跟随用户配色方案;frame() 写入的 --vis-* 变量驱动呼吸与节拍脉冲;
-   漂移用极慢 keyframes(47~101s),只动 transform/opacity,合成器友好。 */
-.vis-ambient-layer {
+   漂移用极慢 keyframes(47~101s),只动 transform/opacity,合成器友好。
+
+   静音可见性:光斑浓度按"无音乐也有质感"设计——基础不透明度较高,
+   并由 --vis-idle 的常驻呼吸动画(12~18s)赋予缓慢明暗起伏,音乐响起时
+   --vis-energy / --vis-bass 等再叠加鼓点响应。 */
+@property.vis-ambient-layer {
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -1110,9 +1114,18 @@ html[data-vis-active='true'][data-vis-mode='quality'] .progress-tooltip {
 html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer {
   opacity: 1;
 }
-/* 音频能量抬起整体浓度(覆盖上面的 opacity: 1,必须排在其后) */
+/* 音频能量决定整体浓度（覆盖上面的 opacity: 1，必须排在其后） */
 html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer {
-  opacity: calc(0.85 + var(--vis-energy, 0) * 0.15);
+  opacity: calc(0.92 + var(--vis-energy, 0) * 0.08);
+  /* 常驻呼吸：整层极缓慢地推近/回落——静音时界面依然"活着"。
+     用 transform 而非透明度/自定义属性动画：transform 走合成器，
+     不会每帧重绘这张全屏渐变，保持 GPU 低占用。 */
+  animation: vis-idle-breath 17s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes vis-idle-breath {
+  from { transform: scale(1) translate3d(0, 0, 0); }
+  to   { transform: scale(1.05) translate3d(0, -1.4vmax, 0); }
 }
 .vis-ambient-layer .vis-blob {
   position: absolute;
@@ -1122,38 +1135,38 @@ html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer {
 .vis-ambient-layer .b1 {
   width: 58vmax; height: 58vmax; left: -14vmax; top: -20vmax;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--accent, #06b6d4) 22%, transparent), transparent 66%);
-  animation: vis-drift-1 47s ease-in-out infinite alternate;
+    color-mix(in srgb, var(--accent, #06b6d4) 30%, transparent), transparent 66%);
+  animation: vis-drift-1 41s ease-in-out infinite alternate;
 }
 .vis-ambient-layer .b2 {
   width: 52vmax; height: 52vmax; right: -16vmax; top: -14vmax;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--accent2, #6366f1) 24%, transparent), transparent 64%);
-  animation: vis-drift-2 61s ease-in-out infinite alternate;
+    color-mix(in srgb, var(--accent2, #6366f1) 32%, transparent), transparent 64%);
+  animation: vis-drift-2 53s ease-in-out infinite alternate;
 }
 .vis-ambient-layer .b3 {
   width: 46vmax; height: 46vmax; left: 28%; bottom: -22vmax;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--accent2, #6366f1) 16%, transparent), transparent 68%);
-  animation: vis-drift-3 73s ease-in-out infinite alternate;
+    color-mix(in srgb, var(--accent2, #6366f1) 24%, transparent), transparent 68%);
+  animation: vis-drift-3 61s ease-in-out infinite alternate;
 }
 .vis-ambient-layer .b4 {
   width: 34vmax; height: 34vmax; right: 6%; bottom: -8vmax;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--accent, #06b6d4) 13%, transparent), transparent 70%);
-  animation: vis-drift-2 89s ease-in-out infinite alternate-reverse;
+    color-mix(in srgb, var(--accent, #06b6d4) 20%, transparent), transparent 70%);
+  animation: vis-drift-2 71s ease-in-out infinite alternate-reverse;
 }
 .vis-ambient-layer .b5 {
   width: 26vmax; height: 26vmax; left: -6vmax; bottom: 6%;
   background: radial-gradient(circle,
-    color-mix(in srgb, var(--accent2, #6366f1) 10%, transparent), transparent 72%);
-  animation: vis-drift-1 101s ease-in-out infinite alternate-reverse;
+    color-mix(in srgb, var(--accent2, #6366f1) 18%, transparent), transparent 72%);
+  animation: vis-drift-1 79s ease-in-out infinite alternate-reverse;
 }
 /* 音频呼吸:scale 独立属性不与漂移 keyframes 的 transform 冲突。
    bass 撑大低频光斑,mid/high 分频驱动中高频光斑,beat 叠加快速衰减脉冲。 */
 html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer .b1 {
-  scale: calc(1 + var(--vis-bass, 0) * 0.12 + var(--vis-beat, 0) * 0.05);
-  opacity: calc(0.7 + var(--vis-bass, 0) * 0.3);
+  scale: calc(1 + var(--vis-bass, 0) * 0.14 + var(--vis-beat, 0) * 0.08);
+  opacity: calc(0.85 + var(--vis-bass, 0) * 0.15);
 }
 html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer .b2 {
   scale: calc(1 + var(--vis-mid, 0) * 0.10);
@@ -1163,30 +1176,32 @@ html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer .b3 {
 }
 html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer .b4 {
   scale: calc(1 + var(--vis-high, 0) * 0.12);
-  opacity: calc(0.65 + var(--vis-high, 0) * 0.35);
+  opacity: calc(0.82 + var(--vis-high, 0) * 0.18);
 }
 html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer .b5 {
   scale: calc(1 + var(--vis-high, 0) * 0.16);
-  opacity: calc(0.6 + var(--vis-high, 0) * 0.4);
+  opacity: calc(0.8 + var(--vis-high, 0) * 0.2);
 }
 @keyframes vis-drift-1 {
   from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(9vmax, 6vmax, 0) scale(1.12); }
+  to   { transform: translate3d(15vmax, 10vmax, 0) scale(1.22); }
 }
 @keyframes vis-drift-2 {
   from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(-8vmax, 9vmax, 0) scale(1.15); }
+  to   { transform: translate3d(-13vmax, 14vmax, 0) scale(1.24); }
 }
 @keyframes vis-drift-3 {
   from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(6vmax, -7vmax, 0) scale(1.1); }
+  to   { transform: translate3d(10vmax, -12vmax, 0) scale(1.18); }
 }
 /* 模式未激活时暂停漂移动画(opacity 渐隐过渡不受影响),避免后台 GPU 空转 */
-html:not([data-vis-active='true'][data-vis-mode='quality']) .vis-ambient-layer .vis-blob {
+html:not([data-vis-active='true'][data-vis-mode='quality']) .vis-ambient-layer .vis-blob,
+html:not([data-vis-active='true'][data-vis-mode='quality']) .vis-ambient-layer {
   animation-play-state: paused;
 }
 @media (prefers-reduced-motion: reduce) {
-  .vis-ambient-layer .vis-blob {
+  .vis-ambient-layer .vis-blob,
+  .vis-ambient-layer {
     animation: none;
   }
 }
