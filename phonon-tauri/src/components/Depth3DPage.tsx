@@ -1,10 +1,10 @@
 ﻿// 三维成空 - 沉浸式 3D 音乐可视化
 // 场景五层结构：流体地面 + 频谱晶体环 + 能量核心 + 流场星尘 + 氛围雾
 // HUD：隐藏式交互，鼠标移动浮现四角按钮，底部 hover 呼出播放栏
-import { useRef, Component, Suspense, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Environment } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import { EffectComposer, Bloom, DepthOfField, Vignette, Noise } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import { useAudioDataRef, lerp } from './depth3d/audioBridge'
@@ -30,17 +30,6 @@ interface Props {
   onToggleVisActive?: (on: boolean) => void
   onVisModeChange?: (mode: any) => void
   onEnterDimension?: (mode: any) => void
-}
-
-// 独立错误边界：隔离 HDR 环境贴图加载失败，避免整棵 Canvas 崩溃
-class EnvErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
-  state = { hasError: false }
-  static getDerivedStateFromError() { return { hasError: true } }
-  componentDidCatch() { /* 静默降级：HDR 加载失败不渲染环境，用现有灯光体系兜底 */ }
-  render() {
-    if (this.state.hasError) return null
-    return this.props.children
-  }
 }
 
 export default function Depth3DPage({
@@ -119,16 +108,9 @@ export default function Depth3DPage({
         <pointLight position={[-10, 4, -8]} intensity={0.25} color={'#5ac8ff'} distance={40} decay={2} />
         <pointLight position={[10, 4, -8]} intensity={0.25} color={'#ff8ac0'} distance={40} decay={2} />
 
-        <EnvErrorBoundary>
-          <Suspense fallback={null}>
-            <Environment
-              preset="night"
-              files={undefined as any}
-              background={false}
-              resolution={128}
-            />
-          </Suspense>
-        </EnvErrorBoundary>
+        {/* 注意：不要加 <Environment>。它会从 CDN 下载 HDR 环境贴图，
+            离线/弱网时 fetch 失败并反复重试，导致整个 3D 页面重新挂载
+            （表现为全窗闪烁）。场景的照明由上面的实体灯光承担。 */}
 
         {/* 场景内容：按主题切换 */}
         {sceneSettings.theme === 'nebula' && (
