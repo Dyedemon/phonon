@@ -1171,19 +1171,6 @@ fn take_cli_args() -> Vec<String> {
     CLI_ARGS.lock().unwrap().drain(..).collect()
 }
 
-/// 由前端在启动层（HTML 内联样式）完成首次绘制后调用。
-/// 在此之前窗口保持隐藏——提前 show 会露出 WebView2 的默认白色底，
-/// 这正是“打开时闪白”的来源。
-#[tauri::command]
-fn show_main_window(app: tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        if !win.is_visible().unwrap_or(false) {
-            let _ = win.show();
-            let _ = win.set_focus();
-        }
-    }
-}
-
 
 /// Persist the main window's geometry (position/size + monitor scale factor).
 /// Ignored when maximized/minimized (keeps the un-maximized restore bounds;
@@ -1385,8 +1372,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            // Boot
-            show_main_window,
             // Playback
             commands::play,
             commands::toggle_play_pause,
@@ -1871,23 +1856,11 @@ pub fn run() {
                         let _ = w.set_size(PhysicalSize::new(final_w, final_h));
                     }
                 }
-                // ── 启动序列：窗口保持隐藏，直到前端启动层完成首次绘制后
-                // 调用 show_main_window —— 提前 show 会露出 WebView2 的默认
-                // 白色底。淡入由前端 CSS 完成。亚克力方案已撤：其 AccentFlags
-                // 缺少 DRAW_ALL_LAYERS 会导致整窗无法接收鼠标输入，且与持续
-                // 重绘的 WebGL 页面叠加会引发全窗闪烁。
-                let anim_win = window.clone();
-                {
-                    // 兜底：若前端异常导致永不调用 show_main_window，
-                    // 3 秒后强制显示（宁可暗屏也不白屏/无窗）。
-                    let safety_win = anim_win.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(3));
-                        if !safety_win.is_visible().unwrap_or(false) {
-                            let _ = safety_win.show();
-                        }
-                    });
-                }
+                // ── 启动序列说明：窗口在配置中即可见（backgroundColor 深色
+                // 兜底），内容的淡入由前端 CSS（#root 动画）完成。
+                // 曾经试验过“隐藏创建 + 前端触发显示”，但 WebView2 隐藏创建
+                // 后再次显示存在输入不恢复的问题（标题栏按钮无法点击），
+                // 亚克力背景亦会加重输入失效与 WebGL 闪烁——均已回退。
 
                 // ── 几何防抖保存：移动/缩放停止 1 秒后自动落盘。
                 // 此前的保存点只有“点 X 关闭”，托盘退出（quit_app）之外的

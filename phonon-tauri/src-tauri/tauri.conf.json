@@ -22,7 +22,6 @@
         "fullscreen": false,
         "maximized": false,
         "center": true,
-        "visible": false,
         "backgroundColor": "#05050c",
         "devtools": false,
         "decorations": false
