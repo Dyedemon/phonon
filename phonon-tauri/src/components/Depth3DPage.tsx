@@ -64,6 +64,18 @@ export default function Depth3DPage({
     }
   }, [sceneSettings.theme])
 
+  // 自适应渲染倍率：GPU 跟不上时（帧时间下降）自动降档，避免
+  // 帧超时导致合成器读到空缓冲（表现为整窗闪烁）；恢复流畅后回升。
+  const [dprScale, setDprScale] = useState(1)
+
+  // 质量预设 -> 渲染倍率上限。星云着色器较重，4K 下 dpr 2 会把中端
+  // GPU 压垮，因此 high 档从 2 降到 1.5（配合自适应仍可自动再降）。
+  const dprCap =
+    sceneSettings.quality === 'low' ? 1
+    : sceneSettings.quality === 'mid' ? 1.25
+    : sceneSettings.quality === 'ultra' ? 2
+    : 1.5
+
   return (
     <div style={{
       position: 'fixed', inset: 0,
@@ -74,7 +86,8 @@ export default function Depth3DPage({
       {/* 3D 画布 */}
       <Canvas
         shadows
-        dpr={sceneSettings.quality === 'low' ? [1, 1] : sceneSettings.quality === 'mid' ? [1, 1.5] : sceneSettings.quality === 'ultra' ? [1, 2.5] : [1, 2]}
+        dpr={[1, dprCap * dprScale]}
+        frameloop="always"
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ position: [0, 1.5, 13], fov: 60, near: 0.1, far: 200 }}
         style={{ position: 'absolute', inset: 0, zIndex: 0 }}
@@ -87,6 +100,13 @@ export default function Depth3DPage({
         <CameraRig
           audioRef={audioRef}
           theme={sceneSettings.theme}
+        />
+
+        {/* 帧时间调节器：GPU 跟不上时自动降低渲染倍率 */}
+        <FrameGovernor
+          onAdjust={(delta) =>
+            setDprScale((s) => Math.min(1, Math.max(0.6, s + delta * 0.2)))
+          }
         />
 
         {/* 灯光体系：整体偏暗，靠发光物体照亮场景 */}
@@ -158,14 +178,15 @@ export default function Depth3DPage({
           />
         )}
 
-        {/* 后期处理（按质量分级） */}
+        {/* 后期处理（按质量分级）。
+            景深（DoF）是全屏后处理里最贵的一项，只在 ultra 档保留——
+            中低档关掉它可显著降低帧时间（丢帧会表现为整窗闪烁）。
+            MSAA（multisampling）同理，仅 ultra 开启。 */}
         {sceneSettings.postProcessing && (
-          <EffectComposer multisampling={sceneSettings.quality === 'low' ? 0 : sceneSettings.quality === 'mid' ? 0 : 2} enableNormalPass={false}>
-            <DepthOfField
-              focusDistance={0.012}
-              focalLength={sceneSettings.quality === 'low' ? 0.01 : sceneSettings.quality === 'mid' ? 0.015 : 0.02}
-              bokehScale={sceneSettings.quality === 'low' ? 0.5 : sceneSettings.quality === 'mid' ? 0.9 : sceneSettings.quality === 'ultra' ? 1.5 : 1.2}
-            />
+          <EffectComposer multisampling={sceneSettings.quality === 'ultra' ? 2 : 0} enableNormalPass={false}>
+            {sceneSettings.quality === 'ultra' && (
+              <DepthOfField focusDistance={0.012} focalLength={0.02} bokehScale={1.5} />
+            )}
             <Bloom
               intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.45 : 0.32}
               luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : 0.75}
@@ -222,6 +243,31 @@ export default function Depth3DPage({
 }
 
 // ========== 相机 rig：target 轻微浮动 ==========
+/** 帧时间调节器：滚动统计平均帧时间，超标则请求降档、流畅则请求升档。
+ *  仅统计、不渲染；配合外层 dprScale 使用。 */
+function FrameGovernor({ onAdjust }: { onAdjust: (delta: number) => void }) {
+  const stat = useRef({ sum: 0, n: 0, last: 0 })
+  useFrame(() => {
+    const now = performance.now()
+    const s = stat.current
+    if (s.last > 0) {
+      s.sum += now - s.last
+      s.n += 1
+      if (s.n >= 40) {
+        const avg = s.sum / s.n
+        s.sum = 0
+        s.n = 0
+        // 60Hz 一帧 16.7ms；超过 24ms（<42fps）说明开始丢帧，降档；
+        // 低于 18ms 且仍有余量时尝试升档（配合 alternate 双向）
+        if (avg > 24) onAdjust(-1)
+        else if (avg < 18) onAdjust(1)
+      }
+    }
+    s.last = now
+  })
+  return null
+}
+
 function CameraRig({ audioRef, theme }: {
   audioRef: React.MutableRefObject<SmoothedAudioData>
   theme: string
