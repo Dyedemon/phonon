@@ -1853,6 +1853,12 @@ pub fn run() {
 
                         let _ = w.set_position(PhysicalPosition::new(final_x, final_y));
                         let _ = w.set_size(PhysicalSize::new(final_w, final_h));
+                        // WebView2 命中区域同步：窗口被 set_position/set_size
+                        // 移动后，输入命中区域可能仍停留在创建时的位置
+                        // （表现为按钮可见但无法点击，最大化后才恢复——最大化
+                        //  会强制重新同步）。±1px 抖动强制控制器重做边界。
+                        let _ = w.set_size(PhysicalSize::new(final_w + 1, final_h));
+                        let _ = w.set_size(PhysicalSize::new(final_w, final_h));
                     }
                 }
                 // ── 启动序列说明：窗口在配置中即可见（backgroundColor 深色
