@@ -1744,6 +1744,9 @@ function App() {
             />
           </Suspense>
         )}
+
+        {/* ── 临时诊断：命中测试探针（定位按钮失灵问题后移除） ── */}
+        <HitTestProbe />
         {activeTab === 'player' && (
           <PlayerView
             playback={playback}
@@ -2389,6 +2392,58 @@ function PlayerBar({
 function extractFileName(path: string): string {
   const name = path.split(/[\\/]/).pop() || path
   return name.replace(/\.[^.]+$/, '')
+}
+
+/** 临时诊断：命中测试探针。实时显示光标处/标题栏按钮处的
+ *  实际顶层元素——用于定位“按钮看得见点不了”的遮挡层。定位后移除。 */
+function HitTestProbe() {
+  const [info, setInfo] = useState('…')
+  useEffect(() => {
+    let alive = true
+    const tick = () => {
+      if (!alive) return
+      try {
+        const btn = document.querySelector('.titlebar-btn')
+        const br = btn ? btn.getBoundingClientRect() : null
+        const cursor = { x: window.__probeX ?? 0, y: window.__probeY ?? 0 }
+        const atCursor = document.elementFromPoint(cursor.x, cursor.y)
+        const atBtn = br
+          ? document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2)
+          : null
+        const tag = (e: Element | null) =>
+          e ? e.tagName + '.' + String(e.className).slice(0, 28) : 'none'
+        setInfo(
+          `cursor(${cursor.x},${cursor.y})→${tag(atCursor)} | minBtn@` +
+            (br ? `${Math.round(br.x)},${Math.round(br.y)}` : '?') +
+            `→${tag(atBtn)}` +
+            ` | btnIsTop=${btn ? btn.contains(atBtn!) : 'no-btn'}`
+        )
+      } catch { /* ignore */ }
+      setTimeout(tick, 400)
+    }
+    const move = (e: MouseEvent) => {
+      ;(window as unknown as { __probeX?: number; __probeY?: number }).__probeX = e.clientX
+      ;(window as unknown as { __probeX?: number; __probeY?: number }).__probeY = e.clientY
+    }
+    document.addEventListener('mousemove', move)
+    tick()
+    return () => {
+      alive = false
+      document.removeEventListener('mousemove', move)
+    }
+  }, [])
+  return (
+    <div
+      style={{
+        position: 'fixed', left: 8, bottom: 8, zIndex: 2147483000,
+        background: 'rgba(0,0,0,0.85)', color: '#0f0', font: '11px monospace',
+        padding: '4px 8px', borderRadius: 6, pointerEvents: 'none',
+        maxWidth: '70vw', whiteSpace: 'nowrap', overflow: 'hidden',
+      }}
+    >
+      {info}
+    </div>
+  )
 }
 
 export default App
