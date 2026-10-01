@@ -171,33 +171,49 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
   // ── 启动层交接 ──
-  // 静态启动层（index.html，毛玻璃 + 极光漂移）在首帧即可见；此处等 React
-  // 首帧提交（双 rAF）且满足最短展示时长后：标记 app-booted（启动层淡出、
-  // 主界面淡入），延时把启动层从 DOM 移除——backdrop-filter 常驻会持续
-  // 消耗合成资源，移除后零残留。幂等：HMR/StrictMode 重复执行无副作用。
+  // 静态启动层（index.html，磨砂玻璃 + 半透明→不透明）在首帧即可见；
+  // 等 React 首帧提交（双 rAF）且满足最短展示时长后交接：
+  //   app-booted（启动层淡出、主界面淡入）→ 移除启动层节点 →
+  //   通知后端清除窗口亚克力（主界面已不透明，留着只是白耗合成）。
+  // 无静态防呆：此前 3s/4s 的 CSS 兜底会在 dev 冷启动（React 挂载慢）
+  // 时提前显示主界面，制造出"淡入→淡出→才进入"的假循环，已移除。
+  // 这里用 rAF + 2.5s 硬超时双保险，且整体幂等（HMR 重入无副作用）。
   useEffect(() => {
     let raf2 = 0
-    let t1: ReturnType<typeof setTimeout> | undefined
-    let t2: ReturnType<typeof setTimeout> | undefined
+    let tMin: ReturnType<typeof setTimeout> | undefined
+    let tHard: ReturnType<typeof setTimeout> | undefined
+    let tRemove: ReturnType<typeof setTimeout> | undefined
+    let tClear: ReturnType<typeof setTimeout> | undefined
+
+    const handover = () => {
+      const splash = () => document.getElementById('boot-splash')
+      if (document.documentElement.classList.contains('app-booted') || !splash()) return
+      document.documentElement.classList.add('app-booted')
+      splash()?.classList.add('boot-out')
+      tRemove = setTimeout(() => splash()?.remove(), 800)
+      // 等交叉淡入完成、主界面完全不透明后再撤亚克力（避免露出透明底）
+      tClear = setTimeout(() => {
+        invoke('clear_boot_backdrop').catch(() => {})
+      }, 1000)
+    }
+
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        const splash = () => document.getElementById('boot-splash')
-        const booted = () => document.documentElement.classList.contains('app-booted')
-        if (booted() || !splash()) return // 已交接（HMR 场景）
         const started = (window as unknown as { __bootStart?: number }).__bootStart ?? 0
-        const remain = Math.max(0, 600 - (performance.now() - started))
-        t1 = setTimeout(() => {
-          document.documentElement.classList.add('app-booted')
-          splash()?.classList.add('boot-out')
-          t2 = setTimeout(() => splash()?.remove(), 900)
-        }, remain)
+        const remain = Math.max(0, 650 - (performance.now() - started))
+        tMin = setTimeout(handover, remain)
       })
     })
+    // rAF 被节流（窗口被遮挡等）时的硬超时兜底
+    tHard = setTimeout(handover, 2500)
+
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
-      if (t1) clearTimeout(t1)
-      if (t2) clearTimeout(t2)
+      if (tMin) clearTimeout(tMin)
+      if (tHard) clearTimeout(tHard)
+      if (tRemove) clearTimeout(tRemove)
+      if (tClear) clearTimeout(tClear)
     }
   }, [])
 

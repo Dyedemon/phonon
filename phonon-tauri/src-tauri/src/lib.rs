@@ -1171,6 +1171,19 @@ fn take_cli_args() -> Vec<String> {
     CLI_ARGS.lock().unwrap().drain(..).collect()
 }
 
+/// 启动交接完成后调用：清除窗口的亚克力背景。
+/// 启动层（半透明毛玻璃）期间它让桌面透出模糊底色；主界面完全不透明后
+/// 继续保留只会让 DWM 每帧合成一层无用的模糊背景（白耗 GPU）。
+/// 注意：副作用仅限 Windows 的窗口效果，其他平台天然为无操作。
+#[tauri::command]
+fn clear_boot_backdrop(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if let Err(e) = win.set_effects(None) {
+            log::warn!("[boot] clear window effects failed: {e}");
+        }
+    }
+}
+
 
 /// Persist the main window's geometry (position/size + monitor scale factor).
 /// Ignored when maximized/minimized (keeps the un-maximized restore bounds;
@@ -1372,6 +1385,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            // Boot
+            clear_boot_backdrop,
             // Playback
             commands::play,
             commands::toggle_play_pause,
