@@ -17,6 +17,7 @@
         "fullscreen": false,
         "maximized": false,
         "center": true,
+        "visible": false,
         "transparent": true,
         "windowEffects": {
           "effects": ["acrylic"]

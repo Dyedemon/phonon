@@ -1,7 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { invoke } from '@tauri-apps/api/core'
 import './index.css'
 import App from './App.tsx'
+
+// 启动层（HTML 内联毛玻璃）此刻已完成首次绘制，让后端显示窗口。
+// 此时一切（亚克力背景、启动层、几何）都已就绪——窗口只出现一次。
+// 若此调用异常，后端的页面加载兜底仍会显示窗口。
+invoke('show_main_window').catch(() => {})
 
 // Main window entry point only.
 // The desktop lyrics floating window has its own HTML file

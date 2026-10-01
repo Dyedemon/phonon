@@ -34,12 +34,12 @@
         background: #05050c;
         animation: boot-veil-in 1.2s ease-out both;
       }
-      /* 加载过程中由半透明渐变为更不透明；终点保留 0.85 而非 1.0，
-         让磨砂的桌面始终隐约可见（参考 ZCode 的启动观感）。
-         想要完全不透明把下面的 0.85 改成 1 即可。 */
+      /* 加载过程中由更透明渐变为较不透明；整体保持参考图的
+         "桌面清晰透出"的水准（真模糊由系统亚克力承担）。
+         想更实/更虚调这两个数字即可。 */
       @keyframes boot-veil-in {
-        from { opacity: 0.35; }
-        to { opacity: 0.85; }
+        from { opacity: 0.2; }
+        to { opacity: 0.5; }
       }
       #boot-splash.boot-out {
         opacity: 0;

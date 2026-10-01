@@ -1171,6 +1171,46 @@ fn take_cli_args() -> Vec<String> {
     CLI_ARGS.lock().unwrap().drain(..).collect()
 }
 
+/// 由前端在启动层完成首次绘制后调用：显示窗口并恢复输入。
+///
+/// 已知问题：WebView2 以隐藏方式创建、之后 show，命中测试/输入可能不恢复
+/// （wry 的已知缺陷）。这里用两道保险强制输入恢复：
+///   1. set_focus
+///   2. 1px 尺寸抖动——强制 WebView2 控制器重做边界与命中测试
+/// 都失败时界面仍可见但输入异常——用户会立刻反馈，届时再换方案。
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if win.is_visible().unwrap_or(false) {
+            return;
+        }
+        let _ = win.show();
+        let _ = win.set_focus();
+        if let Ok(size) = win.inner_size() {
+            let w = size.width.max(401);
+            let h = size.height.max(301);
+            let _ = win.set_size(tauri::PhysicalSize::new(w + 1, h));
+            let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+        }
+    }
+}
+
+/// 兜底：前端异常（永不调用 show_main_window）时强制显示窗口。
+fn failsafe_show(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if !win.is_visible().unwrap_or(false) {
+            let _ = win.show();
+            let _ = win.set_focus();
+            if let Ok(size) = win.inner_size() {
+                let w = size.width.max(401);
+                let h = size.height.max(301);
+                let _ = win.set_size(tauri::PhysicalSize::new(w + 1, h));
+                let _ = win.set_size(tauri::PhysicalSize::new(w, h));
+            }
+        }
+    }
+}
+
 /// 启动交接完成后调用：清除窗口的亚克力背景。
 /// 启动层（半透明毛玻璃）期间它让桌面透出模糊底色；主界面完全不透明后
 /// 继续保留只会让 DWM 每帧合成一层无用的模糊背景（白耗 GPU）。
@@ -1367,6 +1407,8 @@ pub fn run() {
                         .frontend_reloading
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     log::info!("[page-load] Frontend ready — events resumed");
+                    // 页面已加载：若窗口仍隐藏（前端 show 调用异常），兜底显示
+                    failsafe_show(app.app_handle());
                     if let Some(win) = app.get_webview_window("main") {
                         let maximized = state
                             .settings
@@ -1386,6 +1428,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Boot
+            show_main_window,
             clear_boot_backdrop,
             // Playback
             commands::play,
