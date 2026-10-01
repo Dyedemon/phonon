@@ -35,7 +35,9 @@
   font-size: var(--font-size);
   line-height: 1.5;
   color: var(--text);
-  background: var(--bg);
+  /* 主窗口为透明 + 系统亚克力（Windows）：html 背景永久透明，
+     不透明底色由 .app 层持有——交接时避免背景瞬时跳变。
+     （:root 的自定义属性仍在此处定义，背景本身在 .app 上。） */
   -webkit-font-smoothing: antialiased;
 }
 

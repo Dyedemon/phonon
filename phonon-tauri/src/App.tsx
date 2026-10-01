@@ -175,9 +175,14 @@ function App() {
   // 等 React 首帧提交（双 rAF）且满足最短展示时长后交接：
   //   app-booted（启动层淡出、主界面淡入）→ 移除启动层节点 →
   //   通知后端清除窗口亚克力（主界面已不透明，留着只是白耗合成）。
-  // 无静态防呆：此前 3s/4s 的 CSS 兜底会在 dev 冷启动（React 挂载慢）
-  // 时提前显示主界面，制造出"淡入→淡出→才进入"的假循环，已移除。
-  // 这里用 rAF + 2.5s 硬超时双保险，且整体幂等（HMR 重入无副作用）。
+  //
+  // 两个历史教训：
+  //   1. 3s/4s 的静态 CSS 兜底会在 dev 冷启动（React 挂载慢于定时器）时
+  //      提前交接，制造"淡入→淡出→才进入"的假循环——交接只由真实的
+  //      React 挂载驱动，硬超时仅作 15s 纯兜底。
+  //   2. 交接时 html/body 背景从透明瞬时切到不透明会再来一次跳变——
+  //      因此 html/body 永久透明（不透明背景由 .app 层持有），交接时
+  //      只剩启动层淡出与主界面淡入的交叉过渡。
   useEffect(() => {
     let raf2 = 0
     let tMin: ReturnType<typeof setTimeout> | undefined
@@ -204,8 +209,8 @@ function App() {
         tMin = setTimeout(handover, remain)
       })
     })
-    // rAF 被节流（窗口被遮挡等）时的硬超时兜底
-    tHard = setTimeout(handover, 2500)
+    // 硬超时兜底：仅在前端异常（永不挂载）时触发，15s 远大于任何冷启动
+    tHard = setTimeout(handover, 15_000)
 
     return () => {
       cancelAnimationFrame(raf1)

@@ -12,14 +12,11 @@
 
       /* ── 启动层（静态绘制，首帧即可见，不依赖 React 挂载） ──
          真·桌面透视：Windows 下窗口为透明 + 系统亚克力（见
-         tauri.windows.conf.json），启动期间 html/body 也保持透明，
-         于是整窗就是一块磨砂玻璃——桌面壁纸透过它模糊呈现。
-         #boot-veil 在加载过程中由半透明渐变为不透明（boot-veil-in），
+         tauri.windows.conf.json），html/body 永久保持透明——
+         不透明背景由 .app 层持有，交接时不再有背景跳变。
+         #boot-veil 在加载过程中由半透明渐变为更不透明（boot-veil-in），
          交接时整层快速淡出、主界面同步淡入。 */
-      html:not(.app-booted),
-      html:not(.app-booted) body {
-        background: transparent !important;
-      }
+      html, body { background: transparent; }
       #boot-splash {
         position: fixed;
         inset: 0;
