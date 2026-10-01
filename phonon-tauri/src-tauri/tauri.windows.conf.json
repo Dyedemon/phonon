@@ -3,28 +3,5 @@
     "resources": {
       "resources/phonon-uninstaller.exe": "phonon-uninstaller.exe"
     }
-  },
-  "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Phonon",
-        "width": 1100,
-        "height": 750,
-        "minWidth": 550,
-        "minHeight": 688,
-        "resizable": true,
-        "fullscreen": false,
-        "maximized": false,
-        "center": true,
-        "visible": false,
-        "transparent": true,
-        "windowEffects": {
-          "effects": ["acrylic"]
-        },
-        "devtools": false,
-        "decorations": false
-      }
-    ]
   }
 }

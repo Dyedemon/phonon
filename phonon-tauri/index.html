@@ -7,16 +7,12 @@
     <title>Phonon</title>
     <style>
       html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; }
-      html { background: #05050c; }
-      body { background: #05050c; color: #b0bdd6; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      html, body { background: #05050c; }
+      body { color: #b0bdd6; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 
       /* ── 启动层（静态绘制，首帧即可见，不依赖 React 挂载） ──
-         真·桌面透视：Windows 下窗口为透明 + 系统亚克力（见
-         tauri.windows.conf.json），html/body 永久保持透明——
-         不透明背景由 .app 层持有，交接时不再有背景跳变。
-         #boot-veil 在加载过程中由半透明渐变为更不透明（boot-veil-in），
-         交接时整层快速淡出、主界面同步淡入。 */
-      html, body { background: transparent; }
+         极光背景 + PHONON 字标卡片。窗口为不透明（创建即可见），
+         交接时启动层淡出、主界面同步淡入——单次交叉过渡。 */
       #boot-splash {
         position: fixed;
         inset: 0;
@@ -25,34 +21,30 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        /* 关键：覆盖层永远不吃输入（此前光斑层吃掉点击是重大教训） */
+        /* 覆盖层永远不吃输入 */
         pointer-events: none;
       }
-      #boot-veil {
+      #boot-aurora {
         position: absolute;
-        inset: 0;
-        background: #05050c;
-        animation: boot-veil-in 1.2s ease-out both;
-      }
-      /* 加载过程中由更透明渐变为较不透明；整体保持参考图的
-         "桌面清晰透出"的水准（真模糊由系统亚克力承担）。
-         想更实/更虚调这两个数字即可。 */
-      @keyframes boot-veil-in {
-        from { opacity: 0.2; }
-        to { opacity: 0.5; }
-      }
-      #boot-splash.boot-out {
-        opacity: 0;
-        transition: opacity 0.45s ease;
+        inset: -20%;
+        background:
+          radial-gradient(60% 55% at 22% 18%, rgba(6, 182, 212, 0.30), transparent 70%),
+          radial-gradient(55% 50% at 78% 82%, rgba(99, 102, 241, 0.34), transparent 72%),
+          radial-gradient(45% 45% at 62% 26%, rgba(139, 92, 246, 0.20), transparent 75%),
+          #05050c;
+        animation: boot-drift 19s ease-in-out infinite alternate;
       }
       #boot-card {
         position: relative;
-        padding: 30px 54px 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 26px 52px;
         border-radius: 20px;
-        background: rgba(10, 12, 24, 0.32);
-        border: 1px solid rgba(150, 180, 255, 0.16);
+        background: rgba(10, 12, 24, 0.52);
+        border: 1px solid rgba(150, 180, 255, 0.14);
         box-shadow:
-          0 16px 54px rgba(0, 0, 0, 0.35),
+          0 16px 54px rgba(0, 0, 0, 0.4),
           inset 0 1px 0 rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(18px) saturate(140%);
         -webkit-backdrop-filter: blur(18px) saturate(140%);
@@ -64,27 +56,35 @@
         text-indent: 7px; /* 抵消末字符字距，视觉居中 */
         color: rgba(210, 226, 255, 0.92);
       }
-      /* 主界面：就绪前隐藏，就绪后与启动层交叉淡入 */
+      /* 交接：启动层淡出、主界面同步淡入（由 App.tsx 驱动 app-booted） */
+      #boot-splash.boot-out {
+        opacity: 0;
+        transition: opacity 0.45s ease;
+      }
       #root { opacity: 0; }
       html.app-booted #root {
         opacity: 1;
         transition: opacity 0.45s ease 0.05s;
       }
+      @keyframes boot-drift {
+        from { transform: translate3d(-2.5%, -1.5%, 0) scale(1); }
+        to { transform: translate3d(2.5%, 2%, 0) scale(1.06); }
+      }
       @media (prefers-reduced-motion: reduce) {
-        #boot-veil { animation: none; opacity: 0.85; }
+        #boot-aurora { animation: none; }
       }
     </style>
   </head>
   <body>
     <div id="boot-splash" aria-hidden="true">
-      <div id="boot-veil"></div>
+      <div id="boot-aurora"></div>
       <div id="boot-card">
         <div id="boot-word">PHONON</div>
       </div>
     </div>
     <div id="root"></div>
     <script>
-      // 启动层时间原点：用于"最短展示时长"（加载过快时动画不一闪而过）
+      // 启动层时间原点：用于"最短展示时长"（加载过快时过渡不一闪而过）
       window.__bootStart = performance.now()
     </script>
     <script type="module" src="/src/main.tsx"></script>

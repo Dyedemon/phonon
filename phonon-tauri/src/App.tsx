@@ -171,24 +171,20 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('player')
 
   // ── 启动层交接 ──
-  // 静态启动层（index.html，磨砂玻璃 + 半透明→不透明）在首帧即可见；
+  // 静态启动层（index.html，极光背景 + PHONON 字标）在首帧即可见；
   // 等 React 首帧提交（双 rAF）且满足最短展示时长后交接：
-  //   app-booted（启动层淡出、主界面淡入）→ 移除启动层节点 →
-  //   通知后端清除窗口亚克力（主界面已不透明，留着只是白耗合成）。
+  // 启动层淡出、主界面同步淡入，随后把启动层节点从 DOM 移除。
   //
-  // 两个历史教训：
-  //   1. 3s/4s 的静态 CSS 兜底会在 dev 冷启动（React 挂载慢于定时器）时
-  //      提前交接，制造"淡入→淡出→才进入"的假循环——交接只由真实的
-  //      React 挂载驱动，硬超时仅作 15s 纯兜底。
-  //   2. 交接时 html/body 背景从透明瞬时切到不透明会再来一次跳变——
-  //      因此 html/body 永久透明（不透明背景由 .app 层持有），交接时
-  //      只剩启动层淡出与主界面淡入的交叉过渡。
+  // 历史教训（务必保持现状，不要"优化"回去）：
+  //   1. 静态 CSS 兜底（3s/4s 定时）会在 dev 冷启动时提前交接，
+  //      制造"淡入→淡出→才进入"的假循环——交接只由真实挂载驱动。
+  //   2. 窗口级透明/亚克力 + 隐藏创建曾导致标题栏按钮无法点击与
+  //      全窗闪烁——窗口保持不透明、创建即可见。
   useEffect(() => {
     let raf2 = 0
     let tMin: ReturnType<typeof setTimeout> | undefined
     let tHard: ReturnType<typeof setTimeout> | undefined
     let tRemove: ReturnType<typeof setTimeout> | undefined
-    let tClear: ReturnType<typeof setTimeout> | undefined
 
     const handover = () => {
       const splash = () => document.getElementById('boot-splash')
@@ -196,10 +192,6 @@ function App() {
       document.documentElement.classList.add('app-booted')
       splash()?.classList.add('boot-out')
       tRemove = setTimeout(() => splash()?.remove(), 800)
-      // 等交叉淡入完成、主界面完全不透明后再撤亚克力（避免露出透明底）
-      tClear = setTimeout(() => {
-        invoke('clear_boot_backdrop').catch(() => {})
-      }, 1000)
     }
 
     const raf1 = requestAnimationFrame(() => {
@@ -209,7 +201,7 @@ function App() {
         tMin = setTimeout(handover, remain)
       })
     })
-    // 硬超时兜底：仅在前端异常（永不挂载）时触发，15s 远大于任何冷启动
+    // 硬超时兜底：仅在前端异常（永不挂载）时触发
     tHard = setTimeout(handover, 15_000)
 
     return () => {
@@ -218,7 +210,6 @@ function App() {
       if (tMin) clearTimeout(tMin)
       if (tHard) clearTimeout(tHard)
       if (tRemove) clearTimeout(tRemove)
-      if (tClear) clearTimeout(tClear)
     }
   }, [])
 
