@@ -300,10 +300,14 @@ function App() {
   })
   const [visMode, setVisModeState] = useState<VisMode>(() => {
     try {
-      const saved = localStorage.getItem('phonon.visMode')
-      if (saved === 'classic' || saved === 'depth3d' || saved === 'off') return saved
-    } catch { return 'classic' }
-    return 'classic'
+      const saved = localStorage.getItem('phonon-vis-mode')
+      if (saved === 'none' || saved === 'quality' || saved === 'depth3d'
+        || saved === 'depth4d' || saved === 'depth5d') return saved
+      // 旧版模式名（视觉系统统一前的存储）→ 新名迁移
+      if (saved === 'off') return 'none'
+      if (saved === 'classic' || saved === 'cosmos') return 'quality'
+    } catch { /* ignore */ }
+    return 'none'
   })
   // 视觉增强总开关：每次启动应用都强制默认关闭（用户明确要求），与 visMode 的"上次选择"分离
   const [visActive, setVisActive] = useState<boolean>(false)
@@ -2394,6 +2398,11 @@ function extractFileName(path: string): string {
   return name.replace(/\.[^.]+$/, '')
 }
 
+// 探针用的全局鼠标坐标（仅诊断期间存在）
+declare global {
+  interface Window { __probeX?: number; __probeY?: number }
+}
+
 /** 临时诊断：命中测试探针。实时显示光标处/标题栏按钮处的
  *  实际顶层元素——用于定位“按钮看得见点不了”的遮挡层。定位后移除。 */
 function HitTestProbe() {
@@ -2422,8 +2431,8 @@ function HitTestProbe() {
       setTimeout(tick, 400)
     }
     const move = (e: MouseEvent) => {
-      ;(window as unknown as { __probeX?: number; __probeY?: number }).__probeX = e.clientX
-      ;(window as unknown as { __probeX?: number; __probeY?: number }).__probeY = e.clientY
+      window.__probeX = e.clientX
+      window.__probeY = e.clientY
       // 幽灵标记：在 minimize 按钮"DOM 报告的位置"画一个红圈。
       // 若红圈与真实按钮不重合 → DOM 布局与视觉渲染错位（transform 类）；
       // 若重合但点不了 → 输入路由在 OS/窗口层出了问题。

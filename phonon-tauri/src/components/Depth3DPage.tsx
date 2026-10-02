@@ -187,20 +187,25 @@ export default function Depth3DPage({
             MSAA（multisampling）同理，仅 ultra 开启。 */}
         {sceneSettings.postProcessing && (
           <EffectComposer multisampling={sceneSettings.quality === 'ultra' ? 2 : 0} enableNormalPass={false}>
-            {sceneSettings.quality === 'ultra' && (
-              <DepthOfField focusDistance={0.012} focalLength={0.02} bokehScale={1.5} />
-            )}
-            <Bloom
-              intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.45 : 0.32}
-              luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : 0.75}
-              luminanceSmoothing={0.9}
-              mipmapBlur
-              radius={sceneSettings.quality === 'low' ? 0.35 : sceneSettings.quality === 'mid' ? 0.45 : sceneSettings.quality === 'ultra' ? 0.7 : 0.55}
-            />
-            <Vignette eskil={false} offset={0.2} darkness={0.65} />
-            {sceneSettings.quality !== 'low' && (
-              <Noise blendFunction={BlendFunction.COLOR_DODGE} opacity={sceneSettings.quality === 'mid' ? 0.02 : 0.03} />
-            )}
+            {/* children 类型是严格的 JSX.Element[]（不允许 false/null）——
+                条件生效的效果用数组过滤表达 */}
+            {[
+              ...(sceneSettings.quality === 'ultra' ? (
+                [<DepthOfField key="dof" focusDistance={0.012} focalLength={0.02} bokehScale={1.5} />]
+              ) : []),
+              <Bloom
+                key="bloom"
+                intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.45 : 0.32}
+                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : 0.75}
+                luminanceSmoothing={0.9}
+                mipmapBlur
+                radius={sceneSettings.quality === 'low' ? 0.35 : sceneSettings.quality === 'mid' ? 0.45 : sceneSettings.quality === 'ultra' ? 0.7 : 0.55}
+              />,
+              <Vignette key="vignette" eskil={false} offset={0.2} darkness={0.65} />,
+              ...(sceneSettings.quality !== 'low' ? (
+                [<Noise key="noise" blendFunction={BlendFunction.COLOR_DODGE} opacity={sceneSettings.quality === 'mid' ? 0.02 : 0.03} />]
+              ) : []),
+            ]}
           </EffectComposer>
         )}
       </Canvas>

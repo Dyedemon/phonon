@@ -11,12 +11,10 @@ interface Props {
 
 const LANE_COUNT = 4  // 4 轨道对应 D/F/J/K 四个按键
 const LANE_KEYS = ['KeyD', 'KeyF', 'KeyJ', 'KeyK']
-const LANE_LABELS = ['D', 'F', 'J', 'K']
 
 // 透视参数：近处宽、远处窄
 const NEAR_WIDTH = 9      // 近处轨道总宽度
 const FAR_WIDTH = 2.2     // 远处轨道总宽度
-const TRACK_DEPTH = 22    // 轨道纵深
 const HIT_LINE_Z = 2      // 判定线 Z 位置（靠近相机）
 const FAR_LINE_Z = -20    // 远处汇聚点 Z 位置
 const NOTE_TRAVEL_TIME = 2.0
@@ -61,7 +59,6 @@ export function RhythmVisualizer({ audioRef }: Props) {
   const [keyStates, setKeyStates] = useState<boolean[]>([false, false, false, false])
   const keyStatesRef = useRef<boolean[]>([false, false, false, false])
   const laneFlashRef = useRef<number[]>([0, 0, 0, 0])
-  const hitRingRefs = useRef<(THREE.Mesh | null)[]>([])
 
   const lowSmRef = useRef(0)
   const beatPulseRef = useRef(0)
@@ -146,41 +143,6 @@ export function RhythmVisualizer({ audioRef }: Props) {
         float alpha = core * 0.95 + rim * 0.6;
 
         gl_FragColor = vec4(col, alpha);
-      }
-    `,
-  }), [])
-
-  // ─── 击中光环 ───
-  const hitRingMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    uniforms: {
-      uProgress: { value: 0 },
-      uColor: { value: new THREE.Color(0xffffff) },
-    },
-    vertexShader: /* glsl */`
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform float uProgress;
-      uniform vec3 uColor;
-      varying vec2 vUv;
-      void main() {
-        vec2 uv = vUv - 0.5;
-        float d = length(uv);
-        // 环形：中心在 progress 位置
-        float ringCenter = uProgress * 0.4 + 0.1;
-        float ringWidth = 0.08 + uProgress * 0.05;
-        float ring = smoothstep(ringWidth, 0.0, abs(d - ringCenter));
-
-        float alpha = ring * (1.0 - uProgress) * 1.2;
-        gl_FragColor = vec4(uColor, alpha);
       }
     `,
   }), [])
@@ -481,7 +443,6 @@ export function RhythmVisualizer({ audioRef }: Props) {
     }
 
     const pulse = beatPulseRef.current
-    const low = lowSmRef.current
 
     // 判定线
     if (hitLineRef.current) {
