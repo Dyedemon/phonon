@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 export type VisMode = 'none' | 'quality' | 'depth3d' | 'depth4d' | 'depth5d'
 
@@ -31,6 +32,12 @@ const MODE_OPTIONS: { k: VisMode; label: string; icon: string; disabled?: boolea
  */
 export default function VisModeButton({ enabled, active, mode, onToggle, onModeChange, onEnterDimension }: Props) {
   const [panelOpen, setPanelOpen] = useState(false)
+  // 面板挂载坐标（viewport 坐标，fixed 定位）。
+  // 必须用 Portal 挂到 body：面板是 .tabs 内部的绝对定位元素，而
+  // 窄窗口（≤900px）的媒体查询给 .tabs 加了 overflow-x:auto ——
+  // 滚动容器会裁剪内部的绝对定位后代，整个面板被剪成不可见
+  // （表现为"点击视觉升华没有任何反应"，按钮与事件链其实都正常）。
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null)
   const [hovered, setHovered] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -50,7 +57,17 @@ export default function VisModeButton({ enabled, active, mode, onToggle, onModeC
   if (!enabled) return null
 
   const handleClick = () => {
-    setPanelOpen(v => !v)
+    const next = !panelOpen
+    if (next && btnRef.current) {
+      const PANEL_W = 280
+      const r = btnRef.current.getBoundingClientRect()
+      setPanelPos({
+        top: Math.min(r.bottom + 10, window.innerHeight - 80),
+        // 面板右缘对齐按钮右缘，两端都不越出视口
+        left: Math.max(8, Math.min(r.right - PANEL_W, window.innerWidth - PANEL_W - 8)),
+      })
+    }
+    setPanelOpen(next)
   }
 
   const label = '视觉升华'
@@ -102,8 +119,14 @@ export default function VisModeButton({ enabled, active, mode, onToggle, onModeC
         )}
       </button>
 
-      {panelOpen && (
-        <div ref={panelRef} className="vis-mode-panel" role="menu">
+      {panelOpen && panelPos &&
+        createPortal(
+        <div
+          ref={panelRef}
+          className="vis-mode-panel"
+          role="menu"
+          style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, right: 'auto' }}
+        >
           <div className="vis-mode-panel-glow" aria-hidden="true" />
           {/* 顶部标题 + 开启/关闭开关 */}
           <div className="vis-mode-panel-title">
@@ -198,7 +221,8 @@ export default function VisModeButton({ enabled, active, mode, onToggle, onModeC
               )
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
