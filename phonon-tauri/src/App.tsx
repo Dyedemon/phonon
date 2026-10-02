@@ -2424,6 +2424,25 @@ function HitTestProbe() {
     const move = (e: MouseEvent) => {
       ;(window as unknown as { __probeX?: number; __probeY?: number }).__probeX = e.clientX
       ;(window as unknown as { __probeX?: number; __probeY?: number }).__probeY = e.clientY
+      // 幽灵标记：在 minimize 按钮"DOM 报告的位置"画一个红圈。
+      // 若红圈与真实按钮不重合 → DOM 布局与视觉渲染错位（transform 类）；
+      // 若重合但点不了 → 输入路由在 OS/窗口层出了问题。
+      const btn = document.querySelector('.titlebar-btn')
+      if (btn) {
+        const r = btn.getBoundingClientRect()
+        let ring = document.getElementById('probe-ghost-ring') as HTMLDivElement | null
+        if (!ring) {
+          ring = document.createElement('div')
+          ring.id = 'probe-ghost-ring'
+          ring.style.cssText =
+            'position:fixed;border:2px dashed red;border-radius:4px;pointer-events:none;z-index:2147483646;margin:0'
+          document.body.appendChild(ring)
+        }
+        ring.style.left = `${r.left - 3}px`
+        ring.style.top = `${r.top - 3}px`
+        ring.style.width = `${r.width + 4}px`
+        ring.style.height = `${r.height + 4}px`
+      }
     }
     document.addEventListener('mousemove', move)
     tick()
