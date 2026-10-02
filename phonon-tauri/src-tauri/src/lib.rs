@@ -1803,8 +1803,23 @@ pub fn run() {
                         let saved_scale = s.main_window_scale;
                         let (mut final_x, mut final_y) = (saved_x, saved_y);
                         let (mut final_w, mut final_h) = (saved_w, saved_h);
+
+                        // ── 损坏自愈 ──
+                        // 历史缺陷：虚拟显示器（缩放比与物理屏不同，如
+                        // GameViewer 1.0 vs 物理 1.5）被“最近显示器”匹配选中
+                        // 时，DPI 重缩放会把几何每次缩小 33%，多次启动后
+                        // 复合收缩到最小尺寸（实测 550×688 卡死）。
+                        // 检测：保存的物理尺寸换算成逻辑尺寸后小于窗口
+                        // 最小值（550×688）→ 几何已损坏 → 本次弃用恢复，
+                        // 回到默认 1100×750 居中；随后防抖保存会写入
+                        // 正确的新几何（自愈）。
+                        let logical_w = saved_w as f64 / saved_scale.max(0.1);
+                        let logical_h = saved_h as f64 / saved_scale.max(0.1);
+                        let geometry_corrupt =
+                            saved_scale > 0.0 && (logical_w < 550.0 || logical_h < 688.0);
+
                         if let Ok(monitors) = w.available_monitors() {
-                            if !monitors.is_empty() {
+                            if !monitors.is_empty() && !geometry_corrupt {
                                 // Find which monitor the saved position is closest to
                                 let saved_center_x = saved_x + saved_w as i32 / 2;
                                 let saved_center_y = saved_y + saved_h as i32 / 2;
@@ -1827,8 +1842,16 @@ pub fn run() {
                                     let mpos = m.position();
                                     let msize = m.size();
                                     let cur_scale = m.scale_factor();
+                                    // 重缩放仅在该显示器的缩放比与保存值不同、
+                                    // 且保存的中心确实落在该显示器范围内时执行
+                                    // ——虚拟显示器的缩放比误判正是收缩元凶。
+                                    let center_on_monitor = saved_center_x >= mpos.x - 200
+                                        && saved_center_x <= mpos.x + msize.width as i32 + 200
+                                        && saved_center_y >= mpos.y - 200
+                                        && saved_center_y <= mpos.y + msize.height as i32 + 200;
                                     if saved_scale > 0.0
                                         && (cur_scale - saved_scale).abs() > 0.01
+                                        && center_on_monitor
                                     {
                                         let ratio = cur_scale / saved_scale;
                                         final_x = mpos.x
@@ -1836,9 +1859,9 @@ pub fn run() {
                                         final_y = mpos.y
                                             + ((saved_y - mpos.y) as f64 * ratio).round() as i32;
                                         final_w =
-                                            ((saved_w as f64) * ratio).round().max(400.0) as u32;
+                                            ((saved_w as f64) * ratio).round() as u32;
                                         final_h =
-                                            ((saved_h as f64) * ratio).round().max(300.0) as u32;
+                                            ((saved_h as f64) * ratio).round() as u32;
                                     }
                                     let min_x = mpos.x;
                                     let min_y = mpos.y;
@@ -1850,6 +1873,17 @@ pub fn run() {
                                 }
                             }
                         }
+
+                        // 尺寸下限：不得低于最小逻辑尺寸 × 当前缩放
+                        // （防止重缩放/损坏几何低于最小值被 tao 钳住）
+                        let cur_scale_f = w
+                            .current_monitor()
+                            .ok()
+                            .flatten()
+                            .map(|m| m.scale_factor())
+                            .unwrap_or(1.5);
+                        final_w = final_w.max((550.0 * cur_scale_f) as u32);
+                        final_h = final_h.max((688.0 * cur_scale_f) as u32);
 
                         let _ = w.set_position(PhysicalPosition::new(final_x, final_y));
                         let _ = w.set_size(PhysicalSize::new(final_w, final_h));
