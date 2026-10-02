@@ -131,8 +131,13 @@ export default function TitleBar({ currentTrack }: TitleBarProps) {
     : null
 
   return (
-    <div className="titlebar">
-      <div className="titlebar-left">
+    // 拖拽区用 data-tauri-drag-region（wry 的 JS 实现），不用 CSS
+    // -webkit-app-region：WebView2 对后者的原生命中测试会把 mousedown
+    // 转成非客户区消息（进窗口拖拽循环、吞掉 click），表现为"悬停正常、
+    // 点击无效"，且最大化时行为不同。属性必须落在 mousedown 的确切
+    // target 上，所以标题文本也要带。
+    <div className="titlebar" data-tauri-drag-region>
+      <div className="titlebar-left" data-tauri-drag-region>
         <svg className="titlebar-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <radialGradient id="tb-core" cx="35%" cy="35%" r="65%">
@@ -151,11 +156,11 @@ export default function TitleBar({ currentTrack }: TitleBarProps) {
           <circle cx="256" cy="256" r="75" fill="url(#tb-core)"/>
           <ellipse cx="238" cy="238" rx="28" ry="20" fill="white" fillOpacity="0.45"/>
         </svg>
-        <span className="titlebar-title">Phonon</span>
+        <span className="titlebar-title" data-tauri-drag-region>Phonon</span>
         {displayName && (
           <>
-            <span className="titlebar-separator">&mdash;</span>
-            <span className="titlebar-track">{displayName}</span>
+            <span className="titlebar-separator" data-tauri-drag-region>&mdash;</span>
+            <span className="titlebar-track" data-tauri-drag-region>{displayName}</span>
           </>
         )}
       </div>

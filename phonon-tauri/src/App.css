@@ -15,6 +15,10 @@ textarea::placeholder {
 }
 
 /* ── Title Bar ──────────────────────────── */
+/* 拖拽区由 JSX 上的 data-tauri-drag-region 实现。
+   禁用 CSS -webkit-app-region：WebView2 会对它做原生命中测试，
+   把 drag 区内的 mousedown 转成非客户区消息（拖拽循环吞掉 click），
+   表现为悬停正常、点击无效。 */
 .titlebar {
   height: 36px;
   background: var(--bg-card);
@@ -25,8 +29,6 @@ textarea::placeholder {
   border-bottom: 1px solid var(--border);
   user-select: none;
   flex-shrink: 0;
-  -webkit-app-region: drag;
-  app-region: drag;
 }
 
 .titlebar-left {
@@ -75,8 +77,6 @@ textarea::placeholder {
 .titlebar-right {
   display: flex;
   height: 100%;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 
 .titlebar-btn {

@@ -1703,6 +1703,121 @@ pub fn run() {
                 }
             }
 
+            // ── Create the main window AT the restored geometry ────
+            // 窗口不再写进 tauri.conf.json：这里按上次保存的几何（含损坏
+            // 自愈 + DPI 重缩放 + 位置钳制）直接创建。旧流程是"以配置
+            // 默认 1100×750 创建可见窗口 → setup 里再 set_size 到上次
+            // 大小"，用户会先看到一个默认尺寸的框、再闪回上次大小。
+            // 现在窗口从诞生起就是最终几何，全程只有一次呈现。
+            // 最大化仍延迟到页面加载完成（on_page_load Finished）。
+            {
+                let (saved_x, saved_y, saved_w, saved_h, saved_scale, pos_set) = {
+                    let state = app.state::<AppState>();
+                    let s = state.settings.lock().unwrap();
+                    (
+                        s.main_window_x as i32,
+                        s.main_window_y as i32,
+                        s.main_window_width as u32,
+                        s.main_window_height as u32,
+                        s.main_window_scale,
+                        s.main_window_position_set,
+                    )
+                };
+
+                // 默认：1100×750 逻辑像素，居中（首次运行 / 无有效几何）
+                let mut pos: Option<(f64, f64)> = None;
+                let mut size = (1100.0f64, 750.0f64);
+
+                // 损坏自愈（沿袭 feef5e3 的检测）：保存的物理尺寸换算成
+                // 逻辑尺寸后小于窗口最小值（550×688）→ 几何已被虚拟显示
+                // 器 DPI 误判反复缩小 → 本次弃用恢复，回到默认居中；随后
+                // 防抖保存会写入正确的新几何。
+                let logical_w = saved_w as f64 / saved_scale.max(0.1);
+                let logical_h = saved_h as f64 / saved_scale.max(0.1);
+                let geometry_corrupt =
+                    pos_set && saved_scale > 0.0 && (logical_w < 550.0 || logical_h < 688.0);
+
+                if pos_set && !geometry_corrupt {
+                    // 目标显示器 = 保存中心落在其上/最近的显示器
+                    let saved_center_x = saved_x + saved_w as i32 / 2;
+                    let saved_center_y = saved_y + saved_h as i32 / 2;
+                    let mut best: Option<(
+                        tauri::PhysicalPosition<i32>,
+                        tauri::PhysicalSize<u32>,
+                        f64,
+                    )> = None;
+                    let mut best_dist = i64::MAX;
+                    if let Ok(monitors) = app.handle().available_monitors() {
+                        for m in &monitors {
+                            let (mp, ms) = (m.position(), m.size());
+                            let dx = saved_center_x - (mp.x + ms.width as i32 / 2);
+                            let dy = saved_center_y - (mp.y + ms.height as i32 / 2);
+                            let dist = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
+                            if dist < best_dist {
+                                best_dist = dist;
+                                best = Some((*mp, *ms, m.scale_factor()));
+                            }
+                        }
+                    }
+                    if let Some((mpos, msize, cur_scale)) = best {
+                        let (mut fx, mut fy) = (saved_x as f64, saved_y as f64);
+                        let (mut fw, mut fh) = (saved_w as f64, saved_h as f64);
+                        // 重缩放仅在该显示器的缩放比与保存值不同、且保存的
+                        // 中心确实落在该显示器附近时执行——虚拟显示器的
+                        // 缩放比误判正是历史上收缩的元凶。
+                        let center_on_monitor = saved_center_x >= mpos.x - 200
+                            && saved_center_x <= mpos.x + msize.width as i32 + 200
+                            && saved_center_y >= mpos.y - 200
+                            && saved_center_y <= mpos.y + msize.height as i32 + 200;
+                        if saved_scale > 0.0
+                            && (cur_scale - saved_scale).abs() > 0.01
+                            && center_on_monitor
+                        {
+                            let ratio = cur_scale / saved_scale;
+                            fx = mpos.x as f64 + (saved_x - mpos.x) as f64 * ratio;
+                            fy = mpos.y as f64 + (saved_y - mpos.y) as f64 * ratio;
+                            fw *= ratio;
+                            fh *= ratio;
+                        }
+                        // 至少 100px 标题栏留在该显示器内（防丢失）
+                        fx = fx.clamp(
+                            mpos.x as f64,
+                            (mpos.x + msize.width as i32 - 100) as f64,
+                        );
+                        fy = fy.clamp(
+                            mpos.y as f64,
+                            (mpos.y + msize.height as i32 - 100) as f64,
+                        );
+                        // 尺寸下限：最小逻辑尺寸 × 当前缩放（物理）
+                        fw = fw.max(550.0 * cur_scale);
+                        fh = fh.max(688.0 * cur_scale);
+                        // builder 接口为逻辑像素：物理 ÷ 目标显示器缩放比
+                        pos = Some((fx / cur_scale, fy / cur_scale));
+                        size = (fw / cur_scale, fh / cur_scale);
+                    }
+                }
+
+                let mut builder =
+                    tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+                        .title("Phonon")
+                        .decorations(false)
+                        .resizable(true)
+                        .min_inner_size(550.0, 688.0)
+                        .maximized(false)
+                        .background_color(tauri::window::Color(0x05, 0x05, 0x0c, 0xff));
+                builder = match pos {
+                    Some((x, y)) => builder.position(x, y),
+                    None => builder.center(),
+                };
+                builder = builder.inner_size(size.0, size.1);
+                builder.build()?;
+                log::info!(
+                    "[startup] main window created at pos={:?} size={:?} (logical)",
+                    pos,
+                    size
+                );
+            }
+
             // ── Load session BEFORE window setup ───────────────────
             // This ensures window positions are restored from session.json
             {
@@ -1778,128 +1893,16 @@ pub fn run() {
                 }
                 let w = window.clone();
                 let app_handle = handle.clone();
-                // Restore saved position/size on startup (window is hidden, so no
-                // visible flash). Maximize is deferred until page load finishes so
-                // the user never sees a blank webview surface.
-                {
-                    let state = app_handle.state::<AppState>();
-                    let s = state.settings.lock().unwrap();
-                    let pos_set = s.main_window_position_set;
-                    if pos_set {
-                        use tauri::PhysicalPosition;
-                        use tauri::PhysicalSize;
-                        let saved_x = s.main_window_x as i32;
-                        let saved_y = s.main_window_y as i32;
-                        let saved_w = s.main_window_width as u32;
-                        let saved_h = s.main_window_height as u32;
-
-                        // Clamp position so at least 100px of the title bar
-                        // stays on the nearest monitor. Prevents the window
-                        // from getting lost after a monitor config change
-                        // (e.g. unplugging a secondary display). Also rescale
-                        // geometry when the target monitor's DPI differs from
-                        // the one saved — otherwise a 150%→100% (or docked/
-                        // undocked) change restores a wrong-sized window.
-                        let saved_scale = s.main_window_scale;
-                        let (mut final_x, mut final_y) = (saved_x, saved_y);
-                        let (mut final_w, mut final_h) = (saved_w, saved_h);
-
-                        // ── 损坏自愈 ──
-                        // 历史缺陷：虚拟显示器（缩放比与物理屏不同，如
-                        // GameViewer 1.0 vs 物理 1.5）被“最近显示器”匹配选中
-                        // 时，DPI 重缩放会把几何每次缩小 33%，多次启动后
-                        // 复合收缩到最小尺寸（实测 550×688 卡死）。
-                        // 检测：保存的物理尺寸换算成逻辑尺寸后小于窗口
-                        // 最小值（550×688）→ 几何已损坏 → 本次弃用恢复，
-                        // 回到默认 1100×750 居中；随后防抖保存会写入
-                        // 正确的新几何（自愈）。
-                        let logical_w = saved_w as f64 / saved_scale.max(0.1);
-                        let logical_h = saved_h as f64 / saved_scale.max(0.1);
-                        let geometry_corrupt =
-                            saved_scale > 0.0 && (logical_w < 550.0 || logical_h < 688.0);
-
-                        if let Ok(monitors) = w.available_monitors() {
-                            if !monitors.is_empty() && !geometry_corrupt {
-                                // Find which monitor the saved position is closest to
-                                let saved_center_x = saved_x + saved_w as i32 / 2;
-                                let saved_center_y = saved_y + saved_h as i32 / 2;
-                                let mut best_monitor = None;
-                                let mut best_dist = i64::MAX;
-                                for m in &monitors {
-                                    let pos = m.position();
-                                    let size = m.size();
-                                    let mon_cx = pos.x + size.width as i32 / 2;
-                                    let mon_cy = pos.y + size.height as i32 / 2;
-                                    let dx = saved_center_x - mon_cx;
-                                    let dy = saved_center_y - mon_cy;
-                                    let dist = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
-                                    if dist < best_dist {
-                                        best_dist = dist;
-                                        best_monitor = Some(m);
-                                    }
-                                }
-                                if let Some(m) = best_monitor {
-                                    let mpos = m.position();
-                                    let msize = m.size();
-                                    let cur_scale = m.scale_factor();
-                                    // 重缩放仅在该显示器的缩放比与保存值不同、
-                                    // 且保存的中心确实落在该显示器范围内时执行
-                                    // ——虚拟显示器的缩放比误判正是收缩元凶。
-                                    let center_on_monitor = saved_center_x >= mpos.x - 200
-                                        && saved_center_x <= mpos.x + msize.width as i32 + 200
-                                        && saved_center_y >= mpos.y - 200
-                                        && saved_center_y <= mpos.y + msize.height as i32 + 200;
-                                    if saved_scale > 0.0
-                                        && (cur_scale - saved_scale).abs() > 0.01
-                                        && center_on_monitor
-                                    {
-                                        let ratio = cur_scale / saved_scale;
-                                        final_x = mpos.x
-                                            + ((saved_x - mpos.x) as f64 * ratio).round() as i32;
-                                        final_y = mpos.y
-                                            + ((saved_y - mpos.y) as f64 * ratio).round() as i32;
-                                        final_w =
-                                            ((saved_w as f64) * ratio).round() as u32;
-                                        final_h =
-                                            ((saved_h as f64) * ratio).round() as u32;
-                                    }
-                                    let min_x = mpos.x;
-                                    let min_y = mpos.y;
-                                    // Leave at least 100px of title bar visible
-                                    let max_x = mpos.x + msize.width as i32 - 100;
-                                    let max_y = mpos.y + msize.height as i32 - 100;
-                                    final_x = final_x.clamp(min_x, max_x);
-                                    final_y = final_y.clamp(min_y, max_y);
-                                }
-                            }
-                        }
-
-                        // 尺寸下限：不得低于最小逻辑尺寸 × 当前缩放
-                        // （防止重缩放/损坏几何低于最小值被 tao 钳住）
-                        let cur_scale_f = w
-                            .current_monitor()
-                            .ok()
-                            .flatten()
-                            .map(|m| m.scale_factor())
-                            .unwrap_or(1.5);
-                        final_w = final_w.max((550.0 * cur_scale_f) as u32);
-                        final_h = final_h.max((688.0 * cur_scale_f) as u32);
-
-                        let _ = w.set_position(PhysicalPosition::new(final_x, final_y));
-                        let _ = w.set_size(PhysicalSize::new(final_w, final_h));
-                        // WebView2 命中区域同步：窗口被 set_position/set_size
-                        // 移动后，输入命中区域可能仍停留在创建时的位置
-                        // （表现为按钮可见但无法点击，最大化后才恢复——最大化
-                        //  会强制重新同步）。±1px 抖动强制控制器重做边界。
-                        let _ = w.set_size(PhysicalSize::new(final_w + 1, final_h));
-                        let _ = w.set_size(PhysicalSize::new(final_w, final_h));
-                    }
-                }
-                // ── 启动序列说明：窗口在配置中即可见（backgroundColor 深色
-                // 兜底），内容的淡入由前端 CSS（#root 动画）完成。
-                // 曾经试验过“隐藏创建 + 前端触发显示”，但 WebView2 隐藏创建
-                // 后再次显示存在输入不恢复的问题（标题栏按钮无法点击），
-                // 亚克力背景亦会加重输入失效与 WebGL 闪烁——均已回退。
+                // 窗口几何已在上方创建时应用（含损坏自愈 + DPI 重缩放 +
+                // 位置钳制），不再做事后 set_position/set_size——那会先以
+                // 配置默认尺寸闪一帧、再跳到恢复尺寸（用户可见的"双重
+                // 启动框"）。曾用的 ±1px 尺寸抖动（强制 WebView2 重做
+                // 命中边界）随之移除：窗口从诞生起就是最终尺寸。
+                // ── 启动序列说明：窗口由 setup 手动创建（见上方"Create the
+                // main window"），可见即最终几何，内容淡入由前端 CSS 完成。
+                // 历史教训：亚克力背景会加重输入失效与 WebGL 闪烁，已回退；
+                // 隐藏创建 + 事后恢复几何会造成可见的双重启动框，已改为
+                // 按最终几何直接创建。
 
                 // ── 几何防抖保存：移动/缩放停止 1 秒后自动落盘。
                 // 此前的保存点只有“点 X 关闭”，托盘退出（quit_app）之外的

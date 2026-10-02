@@ -10,23 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Phonon",
-        "width": 1100,
-        "height": 750,
-        "minWidth": 550,
-        "minHeight": 688,
-        "resizable": true,
-        "fullscreen": false,
-        "maximized": false,
-        "center": true,
-        "backgroundColor": "#05050c",
-        "devtools": false,
-        "decorations": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null,
       "assetProtocol": {
