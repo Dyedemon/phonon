@@ -877,9 +877,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
     }
 
     // 星云粒子环
+    // 星云粒子环：与行星环 mesh 共面（0.24/0.05），只保留极小的呼吸摆动
     if (ringRef.current) {
-      ringRef.current.rotation.x = 0.12 + Math.sin(t * 0.06) * 0.02
-      ringRef.current.rotation.z = Math.sin(t * 0.04) * 0.012
+      ringRef.current.rotation.x = 0.24 + Math.sin(t * 0.06) * 0.015
+      ringRef.current.rotation.z = 0.05 + Math.sin(t * 0.04) * 0.01
       const mat = ringRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.25
@@ -887,10 +888,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uPixelRatio.value = dpr
     }
 
-    // 小行星带
+    // 小行星带：与环系共面（原先 -0.08 且 rotation.z 随时间翻滚，越跑越歪）
     if (asteroidRef.current) {
-      asteroidRef.current.rotation.x = -0.08
-      asteroidRef.current.rotation.z = t * 0.005
+      asteroidRef.current.rotation.x = 0.24
+      asteroidRef.current.rotation.z = 0.05
       const mat = asteroidRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uPixelRatio.value = dpr
@@ -915,8 +916,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
       const moon2Dist = 15.0
       const moon2Speed = 0.18
       const moon2Angle = t * moon2Speed + 1.5
-      // 倾斜轨道
-      const incline = 0.4
+      // 轨道面已在环系群组内对齐，这里只留一点自然偏角
+      const incline = 0.08
       const moon2Y = Math.sin(moon2Angle) * moon2Dist * Math.sin(incline)
       const moon2X = Math.cos(moon2Angle) * moon2Dist
       const moon2Z = Math.sin(moon2Angle) * moon2Dist * Math.cos(incline)
@@ -961,17 +962,20 @@ export function NebulaCore({ audioRef, quality }: Props) {
         <primitive object={atmoMat} attach="material" />
       </mesh>
 
-      {/* 卫星1（岩石卫星） */}
-      <mesh ref={moonRef}>
-        <sphereGeometry args={[0.65, Math.floor(q.cloudSeg * 0.5), Math.floor(q.cloudSeg * 0.5)]} />
-        <primitive object={moonMat} attach="material" />
-      </mesh>
+      {/* 卫星系统：与环系共面（倾角同行星环），卫星 2 保留 0.08 rad 自然偏角 */}
+      <group rotation={[0.24, 0, 0.05]}>
+        {/* 卫星1（岩石卫星） */}
+        <mesh ref={moonRef}>
+          <sphereGeometry args={[0.65, Math.floor(q.cloudSeg * 0.5), Math.floor(q.cloudSeg * 0.5)]} />
+          <primitive object={moonMat} attach="material" />
+        </mesh>
 
-      {/* 卫星2（冰卫星） */}
-      <mesh ref={moon2Ref}>
-        <sphereGeometry args={[0.35, Math.floor(q.cloudSeg * 0.4), Math.floor(q.cloudSeg * 0.4)]} />
-        <primitive object={moon2Mat} attach="material" />
-      </mesh>
+        {/* 卫星2（冰卫星） */}
+        <mesh ref={moon2Ref}>
+          <sphereGeometry args={[0.35, Math.floor(q.cloudSeg * 0.4), Math.floor(q.cloudSeg * 0.4)]} />
+          <primitive object={moon2Mat} attach="material" />
+        </mesh>
+      </group>
     </group>
   )
 }
