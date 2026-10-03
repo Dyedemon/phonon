@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
@@ -68,8 +68,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const groupRef = useRef<THREE.Group>(null)
   const planetRef = useRef<THREE.Mesh>(null)
   const cloudLayerRef = useRef<THREE.Mesh>(null)
-  const atmoInnerRef = useRef<THREE.Mesh>(null)
-  const atmoOuterRef = useRef<THREE.Mesh>(null)
+  const atmoRef = useRef<THREE.Mesh>(null)
   const ringRef = useRef<THREE.Points>(null)
   const cloudRef = useRef<THREE.Points>(null)
   const moonRef = useRef<THREE.Mesh>(null)
@@ -93,6 +92,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     uniforms: {
       uTime: { value: 0 },
       uLow: { value: 0 },
+      uHigh: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
       uCloudShadow: { value: 0 },
     },
@@ -111,6 +111,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     fragmentShader: /* glsl */`
       uniform float uTime;
       uniform float uLow;
+      uniform float uHigh;
       uniform vec3 uLightDir;
       uniform float uCloudShadow;
       varying vec3 vNormal;
@@ -198,7 +199,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float auroraLat = smoothstep(0.5, 0.8, abs(p.y));
         float auroraBand = sin(p.y * 12.0 + uTime * 0.3) * 0.5 + 0.5;
         float auroraN = fbm(p * 6.0 + vec3(0, uTime * 0.1, 0), 3);
-        float aurora = auroraLat * auroraBand * auroraN * (1.0 - halfLit) * 0.6;
+        // 极光亮度跟高频（镲片/气声点亮夜面极光带）
+        float aurora = auroraLat * auroraBand * auroraN * (1.0 - halfLit) * (0.55 + uHigh * 2.0) * 0.6;
         vec3 auroraCol1 = vec3(0.2, 1.0, 0.5);
         vec3 auroraCol2 = vec3(0.4, 0.6, 1.0);
         vec3 auroraCol3 = vec3(0.8, 0.3, 1.0);
@@ -235,8 +237,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         finalCol += auroraGlow;          // 极光
         finalCol += volcanoGlow;         // 火山
 
-        // 低频发光（音乐律动）
-        finalCol += col * uLow * 0.1;
+        // 低频发光（音乐律动，可感知的呼吸档）
+        finalCol += col * uLow * 0.25;
 
         gl_FragColor = vec4(finalCol, 1.0);
       }
@@ -314,8 +316,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 内层大气 ─── 更柔和的散射
-  const atmoInnerMat = useMemo(() => new THREE.ShaderMaterial({
+  // ─── 大气 ─── 内外辉光合一（省一层全盘透明 pass）
+  // 原内外两层 BackSide 壳（1.01R 紧贴亮环 + 1.12R 宽软外辉）改为在同一张壳上
+  // 用两个不同幂次的菲涅尔项复现：f1 紧（pow 2.8）、f2 宽（pow 1.6）。
+  const atmoMat = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -342,47 +346,20 @@ export function NebulaCore({ audioRef, quality }: Props) {
       varying vec3 vPos;
       void main() {
         vec3 viewDir = normalize(cameraPosition - vPos);
-        float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.8);
+        float ndv = abs(dot(normalize(vNormal), viewDir));
+        float f1 = pow(1.0 - ndv, 2.8);  // 贴边亮环
+        float f2 = pow(1.0 - ndv, 1.6);  // 宽软外辉
         // 光面大气更亮（类似日出日落的辉光）
         float lightSide = max(0.0, dot(normalize(vPos), uLightDir));
         float rimGlow = pow(lightSide, 2.0) * 0.5;
-        vec3 col = mix(vec3(0.35, 0.55, 1.0), vec3(0.65, 0.35, 0.95), uLow * 0.7);
-        vec3 sunsetCol = vec3(1.0, 0.5, 0.2);
-        col = mix(col, sunsetCol, rimGlow * 0.6);
-        gl_FragColor = vec4(col, fresnel * (0.3 + uIntensity * 0.4 + rimGlow * 0.25));
-      }
-    `,
-  }), [])
-
-  // ─── 外层大气 ───
-  const atmoOuterMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
-    uniforms: {
-      uIntensity: { value: 0.3 },
-      uLow: { value: 0 },
-    },
-    vertexShader: /* glsl */`
-      varying vec3 vNormal;
-      varying vec3 vPos;
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vPos = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform float uIntensity;
-      uniform float uLow;
-      varying vec3 vNormal;
-      varying vec3 vPos;
-      void main() {
-        vec3 viewDir = normalize(cameraPosition - vPos);
-        float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 1.6);
-        vec3 col = mix(vec3(0.2, 0.4, 0.9), vec3(0.5, 0.2, 0.85), uLow * 0.5);
-        gl_FragColor = vec4(col, fresnel * (0.12 + uIntensity * 0.3));
+        vec3 innerCol = mix(vec3(0.35, 0.55, 1.0), vec3(0.65, 0.35, 0.95), uLow * 0.7);
+        innerCol = mix(innerCol, vec3(1.0, 0.5, 0.2), rimGlow * 0.6);
+        vec3 outerCol = mix(vec3(0.2, 0.4, 0.9), vec3(0.5, 0.2, 0.85), uLow * 0.5);
+        float a1 = f1 * (0.3 + uIntensity * 0.4 + rimGlow * 0.25);
+        float a2 = f2 * (0.1 + uIntensity * 0.15);
+        float a = min(a1 + a2, 1.0);
+        vec3 col = (innerCol * a1 + outerCol * a2) / max(a1 + a2, 1e-4);
+        gl_FragColor = vec4(col, a);
       }
     `,
   }), [])
@@ -451,9 +428,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float ringB = smoothstep(ringB_inner - 0.02, ringB_inner, r) * smoothstep(ringB_outer + 0.02, ringB_outer, r);
         float ringC = smoothstep(ringC_inner - 0.01, ringC_inner, r) * smoothstep(ringC_outer + 0.01, ringC_outer, r);
 
-        // 纹理：径向条纹 + 周向结构
-        float radialN = fbm2(vec2(r * 40.0 + uTime * 0.4, angle * 12.0));
-        float angN = fbm2(vec2(angle * 25.0 + uTime * 0.25, r * 15.0));
+        // 纹理：径向条纹 + 周向结构。
+        // 角度必须周期化采样：atan 在 ±π 处跳变 2π，直接乘频率会让噪声
+        // 在跳变处完全不连续，环面上留下一根贯穿的接缝亮线。
+        vec2 ap = vec2(cos(angle), sin(angle));
+        float radialN = fbm2(vec2(r * 40.0 + uTime * 0.4, (ap.x + ap.y) * 2.0));
+        float angN = fbm2(ap * 6.0 + vec2(r * 3.0, -uTime * 0.25));
         float tex = radialN * 0.55 + angN * 0.45;
 
         // 每个环带的亮度分布
@@ -503,8 +483,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         alpha *= ringLight;
         col *= ringLight;
 
-        // 音乐响应（极弱，避免闪烁）
-        alpha *= (0.6 + uLow * 0.08 + uRms * 0.04);
+        // 音乐响应（低频抬亮，可感知但不闪烁）
+        alpha *= (0.5 + uLow * 0.35 + uRms * 0.15);
 
         gl_FragColor = vec4(col, alpha);
       }
@@ -782,7 +762,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
   // ─── 卫星 1（主卫星，岩石质地，陨石坑） ───
   const moonMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
-      uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
     vertexShader: /* glsl */`
@@ -795,7 +774,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       }
     `,
     fragmentShader: /* glsl */`
-      uniform float uTime;
       uniform vec3 uLightDir;
       varying vec3 vNormal;
       varying vec3 vPos;
@@ -842,7 +820,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
   // ─── 卫星 2（冰卫星，更小更远） ───
   const moon2Mat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
-      uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
     vertexShader: /* glsl */`
@@ -855,7 +832,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       }
     `,
     fragmentShader: /* glsl */`
-      uniform float uTime;
       uniform vec3 uLightDir;
       varying vec3 vNormal;
       varying vec3 vPos;
@@ -898,15 +874,27 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  useFrame(({ clock }) => {
+  // 质量预设切换会重建几何体：主动 dispose 旧的，避免 GPU 缓冲滞留
+  useEffect(() => () => {
+    nebulaGeo.dispose()
+    asteroidGeo.dispose()
+    cloudGeo.dispose()
+  }, [nebulaGeo, asteroidGeo, cloudGeo])
+
+  useFrame(({ clock, viewport }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
     // 记录启动时间
     if (startTimeRef.current === 0) startTimeRef.current = t
     const elapsed = t - startTimeRef.current
-    // 启动淡入：前 1.5 秒音频响应从 0 渐升到 1，避免进入瞬间闪烁
-    initFadeRef.current = Math.min(1, initFadeRef.current + 0.015)
+    // 启动淡入：音频响应前 ~1.1s 从 0 渐升到 1，避免进入瞬间闪烁
+    // （delta 驱动，帧率变化不影响时长）
+    initFadeRef.current = Math.min(1, initFadeRef.current + delta * 0.9)
     const fade = initFadeRef.current
+
+    // 粒子尺寸跟随画布实际 dpr：governor 降档（画布 dpr 变小）时
+    // gl_PointSize 若仍按设备 dpr 计，所有点会突然放大 25%
+    const dpr = viewport.dpr || 1
 
     lowSmRef.current = lerp(lowSmRef.current, d.lowFreqAvg * fade, 0.08)
     rmsSmRef.current = lerp(rmsSmRef.current, d.rms * fade, 0.06)
@@ -916,7 +904,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     beatCooldownRef.current = Math.max(0, beatCooldownRef.current - 1)
     // 启动前 0.8 秒完全屏蔽 beat
     if (elapsed > 0.8 && d.beat && !lastBeatRef.current && beatCooldownRef.current <= 0) {
-      beatPulseRef.current = 0.08 * fade
+      beatPulseRef.current = 0.18 * fade
       beatCooldownRef.current = 8 // 至少 8 帧冷却（约 130ms @60fps）
     }
     beatPulseRef.current *= 0.68
@@ -932,11 +920,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // 行星自转
     if (planetRef.current) {
       planetRef.current.rotation.y = t * 0.04
-      const scale = 1 + low * 0.003 + pulse * 0.002
+      const scale = 1 + low * 0.015 + pulse * 0.01
       planetRef.current.scale.setScalar(scale)
       const mat = planetRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
+      mat.uniforms.uHigh.value = hiSmRef.current
       mat.uniforms.uCloudShadow.value = cloudShadow
     }
 
@@ -948,23 +937,13 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uLow.value = low
     }
 
-    // 内层大气
-    if (atmoInnerRef.current) {
-      atmoInnerRef.current.rotation.y = -t * 0.025
-      const scale = 1.01 + low * 0.003 + pulse * 0.002
-      atmoInnerRef.current.scale.setScalar(scale)
-      const mat = atmoInnerRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.4 + low * 0.05 + rms * 0.02
-      mat.uniforms.uLow.value = low
-    }
-
-    // 外层大气
-    if (atmoOuterRef.current) {
-      atmoOuterRef.current.rotation.y = t * 0.012
-      const scale = 1.12 + low * 0.005 + pulse * 0.003
-      atmoOuterRef.current.scale.setScalar(scale)
-      const mat = atmoOuterRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.15 + low * 0.03
+    // 大气（合并壳）：半径取两壳中点，呼吸幅度加大到可感知档
+    if (atmoRef.current) {
+      atmoRef.current.rotation.y = -t * 0.025
+      const scale = 1.065 + low * 0.012 + pulse * 0.009
+      atmoRef.current.scale.setScalar(scale)
+      const mat = atmoRef.current.material as THREE.ShaderMaterial
+      mat.uniforms.uIntensity.value = 0.4 + low * 0.3 + rms * 0.1
       mat.uniforms.uLow.value = low
     }
 
@@ -983,8 +962,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
       ringRef.current.rotation.z = Math.sin(t * 0.04) * 0.012
       const mat = ringRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.35 + low * 0.04 + rms * 0.02 + pulse * 0.015
+      mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.25
       mat.uniforms.uLow.value = low
+      mat.uniforms.uPixelRatio.value = dpr
     }
 
     // 小行星带
@@ -993,19 +973,21 @@ export function NebulaCore({ audioRef, quality }: Props) {
       asteroidRef.current.rotation.z = t * 0.005
       const mat = asteroidRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
+      mat.uniforms.uPixelRatio.value = dpr
     }
 
-    // 远处弥漫云（极弱音频响应，避免全屏闪烁）
+    // 远处弥漫云（弱音频响应，避免全屏闪烁）
     if (cloudRef.current) {
       cloudRef.current.rotation.y = t * 0.008
       const mat = cloudRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.2 + hiSmRef.current * 0.03 + low * 0.02
+      mat.uniforms.uIntensity.value = 0.2 + hiSmRef.current * 0.12 + low * 0.08
+      mat.uniforms.uPixelRatio.value = dpr
     }
 
-    // 卫星1：绕行星公转（近，快）
+    // 卫星1：绕行星公转（轨道 12.5 > 环外缘 11.7，避免每圈穿环）
     if (moonRef.current) {
-      const moonDist = 9.5
+      const moonDist = 12.5
       const moonSpeed = 0.28
       const moonAngle = t * moonSpeed
       const moonY = Math.sin(t * 0.18) * 1.0
@@ -1015,13 +997,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
         Math.sin(moonAngle) * moonDist
       )
       moonRef.current.rotation.y = t * 0.4
-      const mat = moonRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uTime.value = t
     }
 
-    // 卫星2（冰卫星）：更远，倾斜轨道
+    // 卫星2（冰卫星）：更远，倾斜轨道（与卫星1拉开距离）
     if (moon2Ref.current) {
-      const moon2Dist = 13.0
+      const moon2Dist = 15.0
       const moon2Speed = 0.18
       const moon2Angle = t * moon2Speed + 1.5
       // 倾斜轨道
@@ -1031,8 +1011,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       const moon2Z = Math.sin(moon2Angle) * moon2Dist * Math.cos(incline)
       moon2Ref.current.position.set(moon2X, moon2Y, moon2Z)
       moon2Ref.current.rotation.y = t * 0.3
-      const mat = moon2Ref.current.material as THREE.ShaderMaterial
-      mat.uniforms.uTime.value = t
     }
   })
 
@@ -1065,22 +1043,16 @@ export function NebulaCore({ audioRef, quality }: Props) {
         <primitive object={cloudLayerMat} attach="material" />
       </mesh>
 
-      {/* 行星环（多环带） */}
-      <mesh ref={planetRingRef} rotation={[0.18, 0, 0.04]}>
+      {/* 行星环（多环带）—— 倾角加大到 ~14°，配合抬高的机位呈现土星式椭圆 */}
+      <mesh ref={planetRingRef} rotation={[0.24, 0, 0.05]}>
         <ringGeometry args={[PLANET_RADIUS * 1.3, PLANET_RADIUS * 2.6, q.ringSeg]} />
         <primitive object={ringMat} attach="material" />
       </mesh>
 
-      {/* 内层大气 */}
-      <mesh ref={atmoInnerRef}>
+      {/* 大气（内外辉光合一） */}
+      <mesh ref={atmoRef}>
         <sphereGeometry args={[PLANET_RADIUS, q.atmoSeg, q.atmoSeg]} />
-        <primitive object={atmoInnerMat} attach="material" />
-      </mesh>
-
-      {/* 外层大气 */}
-      <mesh ref={atmoOuterRef}>
-        <sphereGeometry args={[PLANET_RADIUS, Math.floor(q.atmoSeg * 0.75), Math.floor(q.atmoSeg * 0.75)]} />
-        <primitive object={atmoOuterMat} attach="material" />
+        <primitive object={atmoMat} attach="material" />
       </mesh>
 
       {/* 卫星1（岩石卫星） */}

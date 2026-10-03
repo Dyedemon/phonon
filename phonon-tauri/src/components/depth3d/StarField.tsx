@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
@@ -54,7 +54,10 @@ export function StarField({ audioRef, quality }: Props) {
     geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
     geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1))
     return geo
-  }, [])
+  }, [qScale])
+
+  // 预设切换重建几何体时主动 dispose 旧的（与 NebulaCore 行为一致）
+  useEffect(() => () => { starsGeo.dispose() }, [starsGeo])
 
   const starsMat = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
@@ -129,7 +132,9 @@ export function StarField({ audioRef, quality }: Props) {
     geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1))
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     return geo
-  }, [])
+  }, [qScale])
+
+  useEffect(() => () => { twinkleGeo.dispose() }, [twinkleGeo])
 
   const twinkleMat = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
@@ -175,28 +180,32 @@ export function StarField({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, viewport }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
-    // 启动淡入
-    initFadeRef.current = Math.min(1, initFadeRef.current + 0.012)
+    // 启动淡入（delta 驱动，帧率无关）
+    initFadeRef.current = Math.min(1, initFadeRef.current + delta * 0.72)
     const fade = initFadeRef.current
     hiSmRef.current = lerp(hiSmRef.current, d.highFreqAvg * fade, 0.08)
     const hi = hiSmRef.current
+    // 粒子尺寸跟随画布实际 dpr（governor 降档时不突变）
+    const dpr = viewport.dpr || 1
 
     // 缓慢整体旋转
     if (starsRef.current) {
       starsRef.current.rotation.y = t * 0.01
       const mat = starsRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.65 + hi * 0.05
+      mat.uniforms.uIntensity.value = 0.6 + hi * 0.25
+      mat.uniforms.uPixelRatio.value = dpr
     }
 
     if (twinkleRef.current) {
       twinkleRef.current.rotation.y = -t * 0.015
       const mat = twinkleRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.35 + hi * 0.08
+      mat.uniforms.uIntensity.value = 0.3 + hi * 0.3
+      mat.uniforms.uPixelRatio.value = dpr
     }
   })
 

@@ -156,7 +156,7 @@ export default function Depth3DPage({
         dpr={Math.min(window.devicePixelRatio || 1, dprCap) * dprScale}
         frameloop="demand"
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false }}
-        camera={{ position: [0, 1.5, 13], fov: 60, near: 0.1, far: 200 }}
+        camera={{ position: [0, 3.8, 12.5], fov: 60, near: 0.1, far: 200 }}
         style={{ position: 'absolute', inset: 0, zIndex: 0 }}
       >
         {/* 背景色：深靛蓝紫 */}
@@ -258,8 +258,8 @@ export default function Depth3DPage({
               ) : []),
               <Bloom
                 key="bloom"
-                intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.45 : 0.32}
-                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : sceneSettings.quality === 'ultra' ? 0.45 : 0.75}
+                intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.35 : 0.32}
+                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : sceneSettings.quality === 'ultra' ? 0.6 : 0.75}
                 luminanceSmoothing={0.9}
                 mipmapBlur
                 radius={sceneSettings.quality === 'low' ? 0.35 : sceneSettings.quality === 'mid' ? 0.45 : sceneSettings.quality === 'ultra' ? 0.7 : 0.55}
@@ -401,8 +401,8 @@ function CameraRig({ audioRef, theme }: {
         camera.position.set(0, 3.2, 6)
         targetBaseRef.current.set(0, 0.2, 0)
       } else {
-        // 星云模式：默认视角
-        camera.position.set(0, 1.5, 13)
+        // 星云模式：默认视角（~19° 俯角，环带呈土星式椭圆）
+        camera.position.set(0, 3.8, 12.5)
         targetBaseRef.current.set(0, -0.5, 0)
       }
       if (controls) {
