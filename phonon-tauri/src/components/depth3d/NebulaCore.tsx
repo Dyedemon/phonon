@@ -13,11 +13,11 @@ const PLANET_RADIUS = 4.5
 
 function qualityPreset(quality?: string) {
   switch (quality) {
-    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  nebulaN: 1000, asteroidN: 300, cloudN: 200, ringSeg: 128 }
-    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  nebulaN: 1800, asteroidN: 500, cloudN: 350, ringSeg: 200 }
-    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  nebulaN: 3500, asteroidN: 1200, cloudN: 700, ringSeg: 480 }
+    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  nebulaN: 1000, asteroidN: 300, ringSeg: 128 }
+    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  nebulaN: 1800, asteroidN: 500, ringSeg: 200 }
+    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  nebulaN: 3500, asteroidN: 1200, ringSeg: 480 }
     case 'high':
-    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  nebulaN: 2500, asteroidN: 800, cloudN: 500, ringSeg: 320 }
+    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  nebulaN: 2500, asteroidN: 800, ringSeg: 320 }
   }
 }
 
@@ -70,7 +70,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const cloudLayerRef = useRef<THREE.Mesh>(null)
   const atmoRef = useRef<THREE.Mesh>(null)
   const ringRef = useRef<THREE.Points>(null)
-  const cloudRef = useRef<THREE.Points>(null)
   const moonRef = useRef<THREE.Mesh>(null)
   const moon2Ref = useRef<THREE.Mesh>(null)
   const planetRingRef = useRef<THREE.Mesh>(null)
@@ -681,84 +680,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 远处弥漫星云 ───
-  const cloudGeo = useMemo(() => {
-    const geo = new THREE.BufferGeometry()
-    const count = q.cloudN
-    const positions = new Float32Array(count * 3)
-    const sizes = new Float32Array(count)
-    const colors = new Float32Array(count * 3)
-    const speeds = new Float32Array(count)
-
-    for (let i = 0; i < count; i++) {
-      const r = 15 + Math.random() * 20
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.5
-      positions[i * 3 + 2] = r * Math.cos(phi)
-
-      sizes[i] = 0.35 + Math.random() * 0.7
-      speeds[i] = 0.015 + Math.random() * 0.06
-
-      const hue = 0.6 + Math.random() * 0.3
-      const col = new THREE.Color().setHSL(hue, 0.55, 0.55)
-      colors[i * 3] = col.r
-      colors[i * 3 + 1] = col.g
-      colors[i * 3 + 2] = col.b
-    }
-
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1))
-    return geo
-  }, [q.cloudN])
-
-  const cloudMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uIntensity: { value: 0.35 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-    },
-    vertexShader: /* glsl */`
-      attribute float size;
-      attribute vec3 color;
-      attribute float speed;
-      uniform float uTime;
-      uniform float uIntensity;
-      uniform float uPixelRatio;
-      varying vec3 vColor;
-      varying float vAlpha;
-
-      void main() {
-        vColor = color;
-        vec3 pos = position;
-        pos.x += sin(uTime * speed + position.z * 0.4) * 0.3;
-        pos.y += cos(uTime * speed * 0.6 + position.x * 0.25) * 0.2;
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = size * uIntensity * 32.0 * uPixelRatio / -mvPosition.z;
-        vAlpha = uIntensity * (0.08 + speed * 0.9);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: /* glsl */`
-      varying vec3 vColor;
-      varying float vAlpha;
-      void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float d = length(uv);
-        if (d > 0.5) discard;
-        float alpha = smoothstep(0.5, 0.0, d);
-        alpha = pow(alpha, 1.6) * vAlpha;
-        gl_FragColor = vec4(vColor, alpha);
-      }
-    `,
-  }), [])
-
   // ─── 卫星 1（主卫星，岩石质地，陨石坑） ───
   const moonMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
@@ -878,8 +799,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
   useEffect(() => () => {
     nebulaGeo.dispose()
     asteroidGeo.dispose()
-    cloudGeo.dispose()
-  }, [nebulaGeo, asteroidGeo, cloudGeo])
+  }, [nebulaGeo, asteroidGeo])
 
   useFrame(({ clock, viewport }, delta) => {
     const d = audioRef.current
@@ -976,15 +896,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uPixelRatio.value = dpr
     }
 
-    // 远处弥漫云（弱音频响应，避免全屏闪烁）
-    if (cloudRef.current) {
-      cloudRef.current.rotation.y = t * 0.008
-      const mat = cloudRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.2 + hiSmRef.current * 0.12 + low * 0.08
-      mat.uniforms.uPixelRatio.value = dpr
-    }
-
     // 卫星1：绕行星公转（轨道 12.5 > 环外缘 11.7，避免每圈穿环）
     if (moonRef.current) {
       const moonDist = 12.5
@@ -1016,11 +927,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
   return (
     <group ref={groupRef} position={[0, -0.5, 0]}>
-      {/* 远处弥漫星云（最底层） */}
-      <points ref={cloudRef} geometry={cloudGeo}>
-        <primitive object={cloudMat} attach="material" />
-      </points>
-
       {/* 小行星带 */}
       <points ref={asteroidRef} geometry={asteroidGeo}>
         <primitive object={asteroidMat} attach="material" />
