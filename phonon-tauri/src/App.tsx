@@ -1749,8 +1749,8 @@ function App() {
           </Suspense>
         )}
 
-        {/* ── 临时诊断：命中测试探针（定位按钮失灵问题后移除） ── */}
-        <HitTestProbe />
+        {/* ── 临时诊断：命中测试探针（已定位问题，撤除；需要时从
+            git 历史取回 5c00109 的 HitTestProbe 组件） ── */}
         {activeTab === 'player' && (
           <PlayerView
             playback={playback}
@@ -2396,107 +2396,6 @@ function PlayerBar({
 function extractFileName(path: string): string {
   const name = path.split(/[\\/]/).pop() || path
   return name.replace(/\.[^.]+$/, '')
-}
-
-// 探针用的全局鼠标坐标（仅诊断期间存在）
-declare global {
-  interface Window { __probeX?: number; __probeY?: number }
-}
-
-/** 临时诊断：命中测试探针。实时显示光标处/标题栏按钮处的实际顶层
- *  元素 + 药丸矩形 + 视口参数，并记录完整点击事件链（pointerdown/
- *  mousedown/mouseup/click，捕获阶段）——定位"按钮看得见点不了"的
- *  断链环节。定位后移除。 */
-function HitTestProbe() {
-  const [info, setInfo] = useState('…')
-  const [log, setLog] = useState<string[]>([])
-  useEffect(() => {
-    let alive = true
-    const tick = () => {
-      if (!alive) return
-      try {
-        const btn = document.querySelector('.titlebar-btn')
-        const br = btn ? btn.getBoundingClientRect() : null
-        const pill = document.querySelector('.vis-mode-btn')
-        const pr = pill ? pill.getBoundingClientRect() : null
-        const cursor = { x: window.__probeX ?? 0, y: window.__probeY ?? 0 }
-        const atCursor = document.elementFromPoint(cursor.x, cursor.y)
-        const atBtn = br
-          ? document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2)
-          : null
-        const tag = (e: Element | null) =>
-          e ? e.tagName + '.' + String(e.className).split(' ')[0] : 'none'
-        setInfo(
-          `vw=${window.innerWidth} dpr=${window.devicePixelRatio.toFixed(2)}\n` +
-            `cursor(${cursor.x},${cursor.y})→${tag(atCursor)} | minBtn@` +
-            (br ? `${Math.round(br.x)},${Math.round(br.y)}` : '?') +
-            `→${tag(atBtn)}` +
-            ` | pill@` +
-            (pr
-              ? `${Math.round(pr.x)},${Math.round(pr.y)} ${Math.round(pr.width)}x${Math.round(pr.height)}`
-              : '?')
-        )
-      } catch { /* ignore */ }
-      setTimeout(tick, 400)
-    }
-    const tag2 = (t: EventTarget | null) => {
-      const e = t as Element | null
-      return e && e.tagName
-        ? e.tagName + '.' + String(e.className).split(' ').slice(0, 2).join('.')
-        : String(t)
-    }
-    const onEvt = (ev: MouseEvent) => {
-      setLog((l) => [
-        ...l.slice(-4),
-        `${ev.type}@${Math.round(ev.clientX)},${Math.round(ev.clientY)}→${tag2(ev.target)}`,
-      ])
-    }
-    const evtTypes = ['pointerdown', 'mousedown', 'mouseup', 'click'] as const
-    for (const t of evtTypes) document.addEventListener(t, onEvt, true)
-    const move = (e: MouseEvent) => {
-      window.__probeX = e.clientX
-      window.__probeY = e.clientY
-      // 幽灵标记：在 minimize 按钮"DOM 报告的位置"画一个红圈。
-      // 若红圈与真实按钮不重合 → DOM 布局与视觉渲染错位（transform 类）；
-      // 若重合但点不了 → 输入路由在 OS/窗口层出了问题。
-      const btn = document.querySelector('.titlebar-btn')
-      if (btn) {
-        const r = btn.getBoundingClientRect()
-        let ring = document.getElementById('probe-ghost-ring') as HTMLDivElement | null
-        if (!ring) {
-          ring = document.createElement('div')
-          ring.id = 'probe-ghost-ring'
-          ring.style.cssText =
-            'position:fixed;border:2px dashed red;border-radius:4px;pointer-events:none;z-index:2147483646;margin:0'
-          document.body.appendChild(ring)
-        }
-        ring.style.left = `${r.left - 3}px`
-        ring.style.top = `${r.top - 3}px`
-        ring.style.width = `${r.width + 4}px`
-        ring.style.height = `${r.height + 4}px`
-      }
-    }
-    document.addEventListener('mousemove', move)
-    tick()
-    return () => {
-      alive = false
-      document.removeEventListener('mousemove', move)
-      for (const t of evtTypes) document.removeEventListener(t, onEvt, true)
-    }
-  }, [])
-  return (
-    <div
-      style={{
-        position: 'fixed', left: 8, bottom: 8, zIndex: 2147483000,
-        background: 'rgba(0,0,0,0.85)', color: '#0f0', font: '11px monospace',
-        padding: '4px 8px', borderRadius: 6, pointerEvents: 'none',
-        maxWidth: '70vw', whiteSpace: 'pre-wrap', lineHeight: '13px',
-        overflow: 'hidden',
-      }}
-    >
-      {info + (log.length ? '\n' + log.join('\n') : '')}
-    </div>
-  )
 }
 
 export default App
