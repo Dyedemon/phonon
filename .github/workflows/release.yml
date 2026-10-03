@@ -572,7 +572,7 @@ jobs:
           # windows-x86_64 / darwin-aarch64 / darwin-x86_64 / linux-x86_64
           $out = [ordered]@{
             version = $version
-            notes = "Release $tag — 见 https://github.com/phonon/phonon/releases/tag/$tag"
+            notes = "Release $tag — 见 https://github.com/Dyedemon/phonon/releases/tag/$tag"
             pub_date = (Get-Date -AsUTC).ToString("o")
             platforms = [ordered]@{}
           }
