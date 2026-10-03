@@ -1194,10 +1194,14 @@ html[data-vis-active='true'][data-vis-mode='quality'] .vis-ambient-layer .b5 {
   from { transform: translate3d(0, 0, 0) scale(1); }
   to   { transform: translate3d(10vmax, -12vmax, 0) scale(1.18); }
 }
-/* 模式未激活时暂停漂移动画(opacity 渐隐过渡不受影响),避免后台 GPU 空转 */
+/* 模式未激活时暂停漂移动画并释放合成层（opacity 渐隐过渡不受影响）。
+   will-change 常驻会把 5 个大光斑 + 全屏层钉在合成器显存里（约数十
+   MB）——休息态（插件启用但质感模式关闭）没必要付这笔钱；激活时
+   下方规则会重新提升。 */
 html:not([data-vis-active='true'][data-vis-mode='quality']) .vis-ambient-layer .vis-blob,
 html:not([data-vis-active='true'][data-vis-mode='quality']) .vis-ambient-layer {
   animation-play-state: paused;
+  will-change: auto;
 }
 @media (prefers-reduced-motion: reduce) {
   .vis-ambient-layer .vis-blob,
