@@ -42,12 +42,35 @@ export default function Depth3DPage({
   void coverUrl
   const audioRef = useAudioDataRef()
 
-  // ===== 3D 场景设置状态 =====
-  const [sceneSettings, setSceneSettings] = useState({
-    theme: 'nebula',           // 可视化主题
-    postProcessing: true,      // 后处理效果
-    quality: 'high',           // 质量预设：low / mid / high / ultra
+  // ===== 3D 场景设置状态（跨进入持久化）=====
+  // 每次进页都重置会让用户反复看 governor 重新降档的闪屏，
+  // 也丢掉主题/画质选择——照 phonon-vis-mode 的模式存 localStorage。
+  // 水合必须做白名单校验：脏数据（旧版本/手改）不能带崩页面。
+  const [sceneSettings, setSceneSettings] = useState(() => {
+    const defaults = {
+      theme: 'nebula',           // 可视化主题
+      postProcessing: true,      // 后处理效果
+      quality: 'high',           // 质量预设：low / mid / high / ultra
+    }
+    try {
+      const raw = localStorage.getItem('phonon-3d-settings')
+      if (!raw) return defaults
+      const p = JSON.parse(raw) as Record<string, unknown>
+      return {
+        theme: p.theme === 'rhythm' ? 'rhythm' : 'nebula',
+        postProcessing: typeof p.postProcessing === 'boolean' ? p.postProcessing : true,
+        quality: ['low', 'mid', 'high', 'ultra'].includes(p.quality as string)
+          ? (p.quality as string)
+          : 'high',
+      }
+    } catch { /* 损坏的 JSON 按默认值走 */ }
+    return defaults
   })
+
+  // 任何设置变化统一写回（含 HUD 里的 setSetting 全部入口）
+  useEffect(() => {
+    try { localStorage.setItem('phonon-3d-settings', JSON.stringify(sceneSettings)) } catch { /* ignore */ }
+  }, [sceneSettings])
 
   const setSetting = useCallback((key: string, value: any) => {
     setSceneSettings((prev) => ({ ...prev, [key]: value }))
@@ -364,6 +387,8 @@ function CameraRig({ audioRef, theme }: {
   const prevThemeRef = useRef(theme)
   const targetBaseRef = useRef(new THREE.Vector3(0, isRhythm ? 0.2 : -0.5, isRhythm ? 0 : 0))
   const targetShakeRef = useRef(new THREE.Vector3())
+  // 节拍推拉方向向量：useFrame 每帧跑，复用同一个实例避免 60fps 的 GC 压力
+  const beatDirRef = useRef(new THREE.Vector3())
   const beatShakeRef = useRef(0)
   const lastBeatRef = useRef(false)
 
@@ -404,9 +429,8 @@ function CameraRig({ audioRef, theme }: {
         const beatPush = beatShakeRef.current * 0.08
         // 只对相机位置做极微小的 beat 推拉（不影响 target，用户可自由拖动）
         if (camera && c.target) {
-          const dir = new THREE.Vector3()
-          dir.subVectors(camera.position, c.target).normalize()
-          camera.position.addScaledVector(dir, -beatPush * 0.15)
+          beatDirRef.current.subVectors(camera.position, c.target).normalize()
+          camera.position.addScaledVector(beatDirRef.current, -beatPush * 0.15)
         }
       }
     } else {
