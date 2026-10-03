@@ -212,7 +212,7 @@ export default function Depth3DPage({
           </>
         )}
 
-        {/* OrbitControls：自由视角（星云模式） */}
+        {/* OrbitControls：自由视角（星云模式）——俯仰全开，绕中心点全方位观察 */}
         {sceneSettings.theme === 'nebula' && (
           <OrbitControls
             enablePan={false}
@@ -220,8 +220,8 @@ export default function Depth3DPage({
             dampingFactor={0.05}
             minDistance={5}
             maxDistance={45}
-            maxPolarAngle={Math.PI / 2 - 0.05}
-            minPolarAngle={0.25}
+            minPolarAngle={0.01}
+            maxPolarAngle={Math.PI - 0.01}
             target={[0, -0.5, 0]}
             makeDefault
           />
@@ -258,11 +258,11 @@ export default function Depth3DPage({
               ) : []),
               <Bloom
                 key="bloom"
-                intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.35 : 0.32}
-                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : sceneSettings.quality === 'ultra' ? 0.6 : 0.75}
+                intensity={sceneSettings.quality === 'low' ? 0.15 : sceneSettings.quality === 'mid' ? 0.18 : sceneSettings.quality === 'ultra' ? 0.22 : 0.2}
+                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.8 : sceneSettings.quality === 'ultra' ? 0.7 : 0.78}
                 luminanceSmoothing={0.9}
                 mipmapBlur
-                radius={sceneSettings.quality === 'low' ? 0.35 : sceneSettings.quality === 'mid' ? 0.45 : sceneSettings.quality === 'ultra' ? 0.7 : 0.55}
+                radius={sceneSettings.quality === 'low' ? 0.3 : sceneSettings.quality === 'mid' ? 0.35 : sceneSettings.quality === 'ultra' ? 0.5 : 0.4}
               />,
               <Vignette key="vignette" eskil={false} offset={0.2} darkness={0.65} />,
               ...(sceneSettings.quality !== 'low' ? (

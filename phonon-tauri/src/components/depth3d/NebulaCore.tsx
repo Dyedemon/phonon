@@ -348,7 +348,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vec3 viewDir = normalize(cameraPosition - vPos);
         float ndv = abs(dot(normalize(vNormal), viewDir));
         float f1 = pow(1.0 - ndv, 2.8);  // 贴边亮环
-        float f2 = pow(1.0 - ndv, 1.6);  // 宽软外辉
+        float f2 = pow(1.0 - ndv, 2.2);  // 宽软外辉（收紧，避免大范围泛光）
         // 光面大气更亮（类似日出日落的辉光）
         float lightSide = max(0.0, dot(normalize(vPos), uLightDir));
         float rimGlow = pow(lightSide, 2.0) * 0.5;
@@ -356,7 +356,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         innerCol = mix(innerCol, vec3(1.0, 0.5, 0.2), rimGlow * 0.6);
         vec3 outerCol = mix(vec3(0.2, 0.4, 0.9), vec3(0.5, 0.2, 0.85), uLow * 0.5);
         float a1 = f1 * (0.3 + uIntensity * 0.4 + rimGlow * 0.25);
-        float a2 = f2 * (0.1 + uIntensity * 0.15);
+        float a2 = f2 * (0.04 + uIntensity * 0.08);
         float a = min(a1 + a2, 1.0);
         vec3 col = (innerCol * a1 + outerCol * a2) / max(a1 + a2, 1e-4);
         gl_FragColor = vec4(col, a);
@@ -698,7 +698,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.5
       positions[i * 3 + 2] = r * Math.cos(phi)
 
-      sizes[i] = 0.5 + Math.random() * 1.2
+      sizes[i] = 0.35 + Math.random() * 0.7
       speeds[i] = 0.015 + Math.random() * 0.06
 
       const hue = 0.6 + Math.random() * 0.3
@@ -740,8 +740,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         pos.x += sin(uTime * speed + position.z * 0.4) * 0.3;
         pos.y += cos(uTime * speed * 0.6 + position.x * 0.25) * 0.2;
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = size * uIntensity * 50.0 * uPixelRatio / -mvPosition.z;
-        vAlpha = uIntensity * (0.1 + speed * 1.2);
+        gl_PointSize = size * uIntensity * 32.0 * uPixelRatio / -mvPosition.z;
+        vAlpha = uIntensity * (0.08 + speed * 0.9);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
