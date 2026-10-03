@@ -288,7 +288,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
       void main() {
         vec3 p = normalize(vPos);
         float clouds = cloudDensity(p);
-        float alpha = smoothstep(0.48, 0.72, clouds);
+        // 提高密度门槛：云成小块，地形透出来（整片白云糊住行星是被抱怨的"糊"之一）
+        float alpha = smoothstep(0.52, 0.75, clouds);
 
         // 光照：模拟云的体积感
         float NdotL = dot(normalize(vNormal), uLightDir);
@@ -310,7 +311,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         // 夜面云暗化
         cloudCol *= 0.4 + lit * 0.6;
 
-        gl_FragColor = vec4(cloudCol, alpha * (0.4 + uLow * 0.35));
+        gl_FragColor = vec4(cloudCol, alpha * (0.3 + uLow * 0.35));
       }
     `,
   }), [])

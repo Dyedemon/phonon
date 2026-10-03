@@ -79,10 +79,13 @@ export function StarField({ audioRef, quality }: Props) {
       void main() {
         // 闪烁
         float twinkle = sin(uTime * 1.5 + phase) * 0.3 + 0.7;
-        vAlpha = twinkle * uIntensity;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * uPixelRatio * 1.5 / -mvPosition.z * 80.0;
+        // 相机会飞进星壳（maxDistance 45 > 内壳 40）：近距星被按距离反比
+        // 放大成几十像素的失焦灰斑——钳制最大点径 + 近距淡出双保险
+        float depth = -mvPosition.z;
+        gl_PointSize = min(size * uPixelRatio * 1.5 / depth * 80.0, 5.0 * uPixelRatio);
+        vAlpha = twinkle * uIntensity * smoothstep(6.0, 20.0, depth);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -158,10 +161,12 @@ export function StarField({ audioRef, quality }: Props) {
       void main() {
         vColor = color;
         float twinkle = sin(uTime * 3.0 + phase) * 0.5 + 0.5;
-        vAlpha = twinkle * uIntensity;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * uPixelRatio / -mvPosition.z * 120.0;
+        // 同普通星层：钳制点径 + 近距淡出，杜绝近掠星变成大灰斑
+        float depth = -mvPosition.z;
+        gl_PointSize = min(size * uPixelRatio / depth * 120.0, 7.0 * uPixelRatio);
+        vAlpha = twinkle * uIntensity * smoothstep(8.0, 25.0, depth);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,

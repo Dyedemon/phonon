@@ -260,9 +260,9 @@ export default function Depth3DPage({
                 key="bloom"
                 intensity={sceneSettings.quality === 'low' ? 0.15 : sceneSettings.quality === 'mid' ? 0.18 : sceneSettings.quality === 'ultra' ? 0.22 : 0.2}
                 luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.8 : sceneSettings.quality === 'ultra' ? 0.7 : 0.78}
-                luminanceSmoothing={0.9}
+                luminanceSmoothing={0.25}
                 mipmapBlur
-                radius={sceneSettings.quality === 'low' ? 0.3 : sceneSettings.quality === 'mid' ? 0.35 : sceneSettings.quality === 'ultra' ? 0.5 : 0.4}
+                radius={sceneSettings.quality === 'low' ? 0.25 : sceneSettings.quality === 'mid' ? 0.3 : sceneSettings.quality === 'ultra' ? 0.4 : 0.32}
               />,
               <Vignette key="vignette" eskil={false} offset={0.2} darkness={0.65} />,
               ...(sceneSettings.quality !== 'low' ? (
