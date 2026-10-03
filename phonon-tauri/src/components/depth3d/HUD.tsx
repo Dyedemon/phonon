@@ -559,6 +559,8 @@ interface RightPanelProps {
   onVolumeChange?: (v: number) => void
   sceneSettings?: SceneSettings
   onSettingChange?: (key: string, value: any) => void
+  /** 帧预算自动降载的当前档位（0=满血）；>0 时在设置页显示提示 */
+  loadLevel?: number
 }
 
 type PanelTab = 'playback' | 'visual' | 'device' | 'queue' | 'settings'
@@ -587,7 +589,7 @@ interface DspInfo {
   latency_ms: number
 }
 
-export function RightControlPanel({ open, onClose, onExit3D, playback, volume, onVolumeChange, sceneSettings, onSettingChange }: RightPanelProps) {
+export function RightControlPanel({ open, onClose, onExit3D, playback, volume, onVolumeChange, sceneSettings, onSettingChange, loadLevel }: RightPanelProps) {
   const [tab, setTab] = useState<PanelTab>('playback')
   const [devices, setDevices] = useState<DeviceInfo[]>([])
   const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null)
@@ -844,7 +846,7 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
                 onPlay={handlePlayIndex}
               />
             )}
-            {tab === 'settings' && <SettingsTab settings={sceneSettings} onChange={onSettingChange} />}
+            {tab === 'settings' && <SettingsTab settings={sceneSettings} onChange={onSettingChange} loadLevel={loadLevel} />}
           </div>
         </div>
       </div>
@@ -1324,7 +1326,7 @@ function QueueTab({ items, currentIndex, onPlay }: QueueTabProps) {
   )
 }
 
-function SettingsTab({ settings, onChange }: { settings?: SceneSettings; onChange?: (key: string, value: any) => void }) {
+function SettingsTab({ settings, onChange, loadLevel }: { settings?: SceneSettings; onChange?: (key: string, value: any) => void; loadLevel?: number }) {
   const qualityLabels = ['低', '中', '高', '极致']
   const qualityKeys = ['low', 'mid', 'high', 'ultra']
   const currentQ = settings?.quality ?? 'high'
@@ -1344,6 +1346,19 @@ function SettingsTab({ settings, onChange }: { settings?: SceneSettings; onChang
       <div style={{ fontSize: 11, color: 'rgba(180, 200, 240, 0.5)', marginBottom: 6 }}>
         质量预设：
       </div>
+      {(loadLevel ?? 0) > 0 && (
+        <div style={{
+          fontSize: 10,
+          color: 'rgba(255, 205, 130, 0.85)',
+          background: 'rgba(255, 180, 80, 0.08)',
+          border: '1px solid rgba(255, 190, 100, 0.25)',
+          borderRadius: 6,
+          padding: '5px 8px',
+          marginBottom: 8,
+        }}>
+          ⚡ 帧预算保护已自动降载到档位 {loadLevel}（稳定后会自动回升）
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 6 }}>
         {qualityLabels.map((q, i) => (
           <button
@@ -1504,9 +1519,11 @@ interface HUDProps {
   onExit3D?: () => void
   sceneSettings?: SceneSettings
   onSettingChange?: (key: string, value: any) => void
+  /** 帧预算自动降载的当前档位（0=满血）；>0 时在设置页显示提示 */
+  loadLevel?: number
 }
 
-export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings, onSettingChange }: HUDProps) {
+export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings, onSettingChange, loadLevel }: HUDProps) {
   const [cornersVisible, setCornersVisible] = useState(false)
   const [playBarVisible, setPlayBarVisible] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -1610,6 +1627,7 @@ export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings,
         onVolumeChange={handleSetVolume}
         sceneSettings={sceneSettings}
         onSettingChange={onSettingChange}
+        loadLevel={loadLevel}
       />
     </>
   )

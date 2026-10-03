@@ -64,9 +64,53 @@ export default function Depth3DPage({
     }
   }, [sceneSettings.theme])
 
-  // 自适应渲染倍率：GPU 跟不上时（帧时间下降）自动降档，避免
-  // 帧超时导致合成器读到空缓冲（表现为整窗闪烁）；恢复流畅后回升。
-  const [dprScale, setDprScale] = useState(1)
+  // ── 帧预算自适应：统一降级阶梯（level 越大越省）──
+  // 调节器是尖峰驱动的（见 FrameGovernor）：窗口内出现多次长帧 → 降
+  // 一级；连续 5 个零尖峰窗口（≈5s）且距上次降档 8s 冷却后才升一级。
+  // ultra 阶梯：满血(DoF+全分辨率) → 关DoF → 分辨率×0.8 → ×0.6 → ×0.45；
+  // 其余档位只走分辨率阶梯。分辨率用固定值而不是 [min,max] 区间——
+  // 区间会被设备 DPR 截断，产生"降了档但像素数没变"的空操作。
+  const [level, setLevel] = useState(0)
+  const levelRef = useRef(0)
+  const lastDownRef = useRef(0)
+  const ultra = sceneSettings.quality === 'ultra'
+  const maxLevel = ultra ? 4 : 3
+
+  const applyLevel = useCallback((next: number) => {
+    levelRef.current = next
+    setLevel(next)
+  }, [])
+
+  const handleFrameDown = useCallback(() => {
+    let next = levelRef.current + 1
+    // 非 ultra 跳过 DoF 档（它本来就是关的）
+    if (!ultra && next === 1) next = 2
+    if (next > maxLevel) return
+    lastDownRef.current = performance.now()
+    applyLevel(next)
+  }, [ultra, maxLevel, applyLevel])
+
+  const handleFrameUp = useCallback(() => {
+    // 冷却：贴边配置会在"刚好能跑"与"尖峰"之间反复横跳——每次跳变
+    // （重建 composer/重设画布）本身就是一次闪屏，必须让降档决定 sticky。
+    if (performance.now() - lastDownRef.current < 8000) return
+    let next = levelRef.current - 1
+    if (!ultra && next === 1) next = 0
+    if (next < 0) return
+    applyLevel(next)
+  }, [ultra, applyLevel])
+
+  // 切换质量预设时重置，给新预设一个干净的起点
+  useEffect(() => {
+    applyLevel(0)
+    lastDownRef.current = 0
+  }, [sceneSettings.quality, applyLevel])
+
+  const dofOn = ultra && level < 1
+  const DPR_STEPS = [1, 0.8, 0.6, 0.45]
+  const dprScale = ultra
+    ? (level <= 1 ? 1 : DPR_STEPS[level - 1])
+    : DPR_STEPS[level]
 
   // 质量预设 -> 渲染倍率上限。星云着色器较重，4K 下 dpr 2 会把中端
   // GPU 压垮，因此 high 档从 2 降到 1.5（配合自适应仍可自动再降）。
@@ -75,39 +119,6 @@ export default function Depth3DPage({
     : sceneSettings.quality === 'mid' ? 1.25
     : sceneSettings.quality === 'ultra' ? 2
     : 1.5
-
-  // 后处理降级阶梯（仅 ultra 有意义）：0=全量(MSAA2+DoF)、1=关 MSAA、
-  // 2=再关 DoF。渲染倍率到下限仍超帧预算时逐级降档——最底层的成本
-  // 等同于实测不闪的 high 档；恢复流畅后按反序逐级回升。
-  const [degraded, setDegraded] = useState(0)
-  const dprScaleRef = useRef(1)
-  const degradedRef = useRef(0)
-  const handleGovernor = useCallback((delta: number) => {
-    if (delta < 0) {
-      if (dprScaleRef.current > 0.61) {
-        dprScaleRef.current = Math.max(0.6, dprScaleRef.current - 0.2)
-        setDprScale(dprScaleRef.current)
-      } else {
-        degradedRef.current = Math.min(2, degradedRef.current + 1)
-        setDegraded(degradedRef.current)
-      }
-    } else {
-      if (degradedRef.current > 0) {
-        degradedRef.current -= 1
-        setDegraded(degradedRef.current)
-      } else if (dprScaleRef.current < 1) {
-        dprScaleRef.current = Math.min(1, dprScaleRef.current + 0.2)
-        setDprScale(dprScaleRef.current)
-      }
-    }
-  }, [])
-  // 切换质量预设时重置调节状态，给新预设一个干净的起点
-  useEffect(() => {
-    dprScaleRef.current = 1
-    degradedRef.current = 0
-    setDprScale(1)
-    setDegraded(0)
-  }, [sceneSettings.quality])
 
   return (
     <div style={{
@@ -119,7 +130,7 @@ export default function Depth3DPage({
       {/* 3D 画布 */}
       <Canvas
         shadows
-        dpr={[1, dprCap * dprScale]}
+        dpr={Math.min(window.devicePixelRatio || 1, dprCap) * dprScale}
         frameloop="demand"
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ position: [0, 1.5, 13], fov: 60, near: 0.1, far: 200 }}
@@ -138,8 +149,8 @@ export default function Depth3DPage({
         {/* 帧率上限：240Hz 屏幕上把渲染节流到 60fps（见组件注释） */}
         <FramerateCap fps={60} />
 
-        {/* 帧时间调节器：GPU 跟不上时自动降低渲染倍率 / 降级后处理 */}
-        <FrameGovernor onAdjust={handleGovernor} />
+        {/* 帧预算调节器：尖峰驱动的自动降载/回升 */}
+        <FrameGovernor onDown={handleFrameDown} onUp={handleFrameUp} />
 
         {/* 灯光体系：整体偏暗，靠发光物体照亮场景 */}
         <ambientLight intensity={0.12} color="#4a5a8a" />
@@ -211,23 +222,21 @@ export default function Depth3DPage({
         )}
 
         {/* 后期处理（按质量分级 + 帧预算自动降级）。
-            景深（DoF）是全屏后处理里最贵的一项，只在 ultra 档保留——
-            中低档关掉它可显著降低帧时间（丢帧会表现为整窗闪烁）。
-            MSAA（multisampling）同理，仅 ultra 开启。
-            ultra 仍超预算时 FrameGovernor 会先关 MSAA 再关 DoF。 */}
+            景深（DoF）是全屏后处理里最贵的一项，只在 ultra 档保留。
+            MSAA 固定关闭：后处理链（bloom 的 mipmap 模糊）本身就会
+            平滑边缘，多重采样在 composer 之下几乎全是白付的显存与
+            resolve 开销。ultra 超预算时 FrameGovernor 关 DoF、再逐级
+            降分辨率。 */}
         {sceneSettings.postProcessing && (
-          <EffectComposer
-            multisampling={sceneSettings.quality === 'ultra' && degraded === 0 ? 2 : 0}
-            enableNormalPass={false}
-          >
+          <EffectComposer multisampling={0} enableNormalPass={false}>
             {[
-              ...(sceneSettings.quality === 'ultra' && degraded < 2 ? (
+              ...(dofOn ? (
                 [<DepthOfField key="dof" focusDistance={0.012} focalLength={0.02} bokehScale={1.5} />]
               ) : []),
               <Bloom
                 key="bloom"
                 intensity={sceneSettings.quality === 'low' ? 0.2 : sceneSettings.quality === 'mid' ? 0.28 : sceneSettings.quality === 'ultra' ? 0.45 : 0.32}
-                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : 0.75}
+                luminanceThreshold={sceneSettings.quality === 'low' ? 0.85 : sceneSettings.quality === 'mid' ? 0.78 : sceneSettings.quality === 'ultra' ? 0.45 : 0.75}
                 luminanceSmoothing={0.9}
                 mipmapBlur
                 radius={sceneSettings.quality === 'low' ? 0.35 : sceneSettings.quality === 'mid' ? 0.45 : sceneSettings.quality === 'ultra' ? 0.7 : 0.55}
@@ -276,6 +285,7 @@ export default function Depth3DPage({
         onExit3D={onClose}
         sceneSettings={sceneSettings}
         onSettingChange={setSetting}
+        loadLevel={level}
       />
     </div>
   )
@@ -308,35 +318,36 @@ function FramerateCap({ fps = 60 }: { fps?: number }) {
   return null
 }
 
-/** 帧时间调节器：滚动统计平均帧时间，超标则请求降档、流畅则请求升档。
- *  仅统计、不渲染；配合外层 dprScale 使用。 */
-function FrameGovernor({ onAdjust }: { onAdjust: (delta: number) => void }) {
-  const stat = useRef({ sum: 0, n: 0, last: 0, good: 0 })
+/** 帧预算调节器（尖峰驱动）：统计窗口内的超时帧（帧间隔 > 24ms，
+ *  即明显错过 60fps 节拍的长帧——正是"合成器读到空缓冲"的成因）。
+ *  - 一个窗口（60 帧 ≈ 1s）内 ≥3 次尖峰 → onDown（降一级）
+ *  - 连续 5 个零尖峰窗口（≈5s）→ onUp（父级有 8s 冷却）
+ *  为什么不用平均帧时间：60fps 节流下帧间隔恒为 ~16.7ms（含节流空转），
+ *  平均值无法区分"从容"与"贴边"——贴边配置会触发升降振荡，而每次
+ *  跳变（重建 composer/重设画布）本身就是一次闪屏。 */
+function FrameGovernor({ onDown, onUp }: { onDown: () => void; onUp: () => void }) {
+  const stat = useRef({ last: 0, n: 0, spikes: 0, clean: 0 })
   useFrame(() => {
     const now = performance.now()
     const s = stat.current
     if (s.last > 0) {
-      s.sum += now - s.last
+      if (now - s.last > 24) s.spikes += 1
       s.n += 1
-      if (s.n >= 40) {
-        const avg = s.sum / s.n
-        s.sum = 0
-        s.n = 0
-        // 60Hz 一帧 16.7ms；超过 24ms（<42fps）说明开始丢帧，降档；
-        // 恢复需连续两个统计窗（≈80 帧 ≈1.3s）都低于 18ms 才升档——
-        // 防止在 18~24ms 边界来回振荡（每次越界都是一次闪屏风险）。
-        if (avg > 24) {
-          s.good = 0
-          onAdjust(-1)
-        } else if (avg < 18) {
-          s.good += 1
-          if (s.good >= 2) {
-            s.good = 0
-            onAdjust(1)
+      if (s.n >= 60) {
+        if (s.spikes >= 3) {
+          s.clean = 0
+          onDown()
+        } else if (s.spikes === 0) {
+          s.clean += 1
+          if (s.clean >= 5) {
+            s.clean = 0
+            onUp()
           }
         } else {
-          s.good = 0
+          s.clean = 0
         }
+        s.n = 0
+        s.spikes = 0
       }
     }
     s.last = now
