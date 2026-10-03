@@ -718,6 +718,12 @@ function App() {
   //     这样切换到质感提升不会在总开关关闭时意外"直接出现"效果
   const setVisMode = useCallback((mode: VisMode) => {
     setVisModeState(mode)
+    if (mode === 'none') {
+      // 「恢复原生界面」= 退出增强，不是一种可选效果：总开关必须一并关闭，
+      // 否则 pill 仍显示激活态（发光/均衡器/开着的 toggle）而界面毫无增强。
+      setVisActive(false)
+      document.documentElement.removeAttribute('data-vis-active')
+    }
     if (mode === 'quality' || mode === 'depth3d' || mode === 'depth4d' || mode === 'depth5d') {
       localStorage.setItem('phonon-vis-mode', mode)
     } else {
