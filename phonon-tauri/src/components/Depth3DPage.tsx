@@ -76,6 +76,39 @@ export default function Depth3DPage({
     : sceneSettings.quality === 'ultra' ? 2
     : 1.5
 
+  // 后处理降级阶梯（仅 ultra 有意义）：0=全量(MSAA2+DoF)、1=关 MSAA、
+  // 2=再关 DoF。渲染倍率到下限仍超帧预算时逐级降档——最底层的成本
+  // 等同于实测不闪的 high 档；恢复流畅后按反序逐级回升。
+  const [degraded, setDegraded] = useState(0)
+  const dprScaleRef = useRef(1)
+  const degradedRef = useRef(0)
+  const handleGovernor = useCallback((delta: number) => {
+    if (delta < 0) {
+      if (dprScaleRef.current > 0.61) {
+        dprScaleRef.current = Math.max(0.6, dprScaleRef.current - 0.2)
+        setDprScale(dprScaleRef.current)
+      } else {
+        degradedRef.current = Math.min(2, degradedRef.current + 1)
+        setDegraded(degradedRef.current)
+      }
+    } else {
+      if (degradedRef.current > 0) {
+        degradedRef.current -= 1
+        setDegraded(degradedRef.current)
+      } else if (dprScaleRef.current < 1) {
+        dprScaleRef.current = Math.min(1, dprScaleRef.current + 0.2)
+        setDprScale(dprScaleRef.current)
+      }
+    }
+  }, [])
+  // 切换质量预设时重置调节状态，给新预设一个干净的起点
+  useEffect(() => {
+    dprScaleRef.current = 1
+    degradedRef.current = 0
+    setDprScale(1)
+    setDegraded(0)
+  }, [sceneSettings.quality])
+
   return (
     <div style={{
       position: 'fixed', inset: 0,
@@ -105,12 +138,8 @@ export default function Depth3DPage({
         {/* 帧率上限：240Hz 屏幕上把渲染节流到 60fps（见组件注释） */}
         <FramerateCap fps={60} />
 
-        {/* 帧时间调节器：GPU 跟不上时自动降低渲染倍率 */}
-        <FrameGovernor
-          onAdjust={(delta) =>
-            setDprScale((s) => Math.min(1, Math.max(0.6, s + delta * 0.2)))
-          }
-        />
+        {/* 帧时间调节器：GPU 跟不上时自动降低渲染倍率 / 降级后处理 */}
+        <FrameGovernor onAdjust={handleGovernor} />
 
         {/* 灯光体系：整体偏暗，靠发光物体照亮场景 */}
         <ambientLight intensity={0.12} color="#4a5a8a" />
@@ -181,16 +210,18 @@ export default function Depth3DPage({
           />
         )}
 
-        {/* 后期处理（按质量分级）。
+        {/* 后期处理（按质量分级 + 帧预算自动降级）。
             景深（DoF）是全屏后处理里最贵的一项，只在 ultra 档保留——
             中低档关掉它可显著降低帧时间（丢帧会表现为整窗闪烁）。
-            MSAA（multisampling）同理，仅 ultra 开启。 */}
+            MSAA（multisampling）同理，仅 ultra 开启。
+            ultra 仍超预算时 FrameGovernor 会先关 MSAA 再关 DoF。 */}
         {sceneSettings.postProcessing && (
-          <EffectComposer multisampling={sceneSettings.quality === 'ultra' ? 2 : 0} enableNormalPass={false}>
-            {/* children 类型是严格的 JSX.Element[]（不允许 false/null）——
-                条件生效的效果用数组过滤表达 */}
+          <EffectComposer
+            multisampling={sceneSettings.quality === 'ultra' && degraded === 0 ? 2 : 0}
+            enableNormalPass={false}
+          >
             {[
-              ...(sceneSettings.quality === 'ultra' ? (
+              ...(sceneSettings.quality === 'ultra' && degraded < 2 ? (
                 [<DepthOfField key="dof" focusDistance={0.012} focalLength={0.02} bokehScale={1.5} />]
               ) : []),
               <Bloom
@@ -280,7 +311,7 @@ function FramerateCap({ fps = 60 }: { fps?: number }) {
 /** 帧时间调节器：滚动统计平均帧时间，超标则请求降档、流畅则请求升档。
  *  仅统计、不渲染；配合外层 dprScale 使用。 */
 function FrameGovernor({ onAdjust }: { onAdjust: (delta: number) => void }) {
-  const stat = useRef({ sum: 0, n: 0, last: 0 })
+  const stat = useRef({ sum: 0, n: 0, last: 0, good: 0 })
   useFrame(() => {
     const now = performance.now()
     const s = stat.current
@@ -292,9 +323,20 @@ function FrameGovernor({ onAdjust }: { onAdjust: (delta: number) => void }) {
         s.sum = 0
         s.n = 0
         // 60Hz 一帧 16.7ms；超过 24ms（<42fps）说明开始丢帧，降档；
-        // 低于 18ms 且仍有余量时尝试升档（配合 alternate 双向）
-        if (avg > 24) onAdjust(-1)
-        else if (avg < 18) onAdjust(1)
+        // 恢复需连续两个统计窗（≈80 帧 ≈1.3s）都低于 18ms 才升档——
+        // 防止在 18~24ms 边界来回振荡（每次越界都是一次闪屏风险）。
+        if (avg > 24) {
+          s.good = 0
+          onAdjust(-1)
+        } else if (avg < 18) {
+          s.good += 1
+          if (s.good >= 2) {
+            s.good = 0
+            onAdjust(1)
+          }
+        } else {
+          s.good = 0
+        }
       }
     }
     s.last = now
