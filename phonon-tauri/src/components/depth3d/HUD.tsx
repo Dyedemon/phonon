@@ -599,21 +599,15 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
   const [surroundMode, setSurroundMode] = useState<string>('off')
   const [pendingQueueIndex, setPendingQueueIndex] = useState<number | null>(null)
 
-  // 加载真实数据
+  // 设备 / DSP / 增强模式：面板打开时拉取一次（低频变化，不追事件）
   useEffect(() => {
     if (!open) return
-    // 设备
     invoke<DeviceInfo[]>('list_devices')
       .then(setDevices)
       .catch(() => {})
     invoke<{ id: string } | null>('get_current_device')
       .then((d) => setCurrentDeviceId(d?.id ?? null))
       .catch(() => {})
-    // 队列
-    invoke<QueueItem[]>('get_queue')
-      .then(setQueue)
-      .catch(() => {})
-    // DSP
     invoke<DspInfo[]>('list_dsp_processors')
       .then(setDspList)
       .catch(() => {})
@@ -624,6 +618,15 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
       .then(setSurroundMode)
       .catch(() => {})
   }, [open])
+
+  // 队列：打开时拉取；面板开着期间曲目切换也要刷新，否则当前曲目高亮失准
+  const currentTrackForQueue = playback?.current_track
+  useEffect(() => {
+    if (!open) return
+    invoke<QueueItem[]>('get_queue')
+      .then(setQueue)
+      .catch(() => {})
+  }, [open, currentTrackForQueue])
 
   const handleSetDevice = (id: string) => {
     invoke('set_device', { device_id: id })
@@ -648,12 +651,12 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
   }
 
   const handleToggleDsp = (id: string, enabled: boolean) => {
-    if (enabled) {
-      invoke('disable_dsp', { id }).catch(() => {})
-    } else {
-      invoke('enable_dsp', { id }).catch(() => {})
-    }
+    // 乐观更新 UI，后端失败则回滚，避免显示与实际状态脱节
     setDspList((prev) => prev.map((d) => (d.id === id ? { ...d, enabled: !enabled } : d)))
+    const cmd = enabled ? 'disable_dsp' : 'enable_dsp'
+    invoke(cmd, { id }).catch(() => {
+      setDspList((prev) => prev.map((d) => (d.id === id ? { ...d, enabled } : d)))
+    })
   }
 
   const tabs: { key: PanelTab; icon: React.ReactNode; label: string }[] = [
@@ -1336,7 +1339,7 @@ function SettingsTab({ settings, onChange, loadLevel }: { settings?: SceneSettin
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <SectionTitle>显示</SectionTitle>
       <ToggleRow
-        label="后处理效果（Bloom / DOF）"
+        label="后处理效果（极致档含景深）"
         checked={settings?.postProcessing ?? true}
         onChange={(v) => onChange?.('postProcessing', v)}
       />
@@ -1536,10 +1539,12 @@ export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings,
     setSharedVol(volume)
   }, [volume])
 
-  // 统一的音量设置函数（两边都调这个）
+  // 统一的音量设置函数（两边都调这个）。
+  // 后端调用必须交给 App.handleVolume——那边有 50ms 节流；
+  // 这里若直接 invoke('set_volume')，拖动时每条 mousemove 都会
+  // 绕过节流直达 IPC，且与 App 路径形成双重调用。
   const handleSetVolume = useCallback((v: number) => {
     setSharedVol(v)
-    invoke('set_volume', { level: v / 100 }).catch(() => {})
     onVolumeChange?.(v)
   }, [onVolumeChange])
 
@@ -1577,6 +1582,17 @@ export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings,
     }
   }, [handleMouseMove])
 
+  // Esc：控制台面板开着时先关面板；否则退出 3D 页
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (panelOpen) setPanelOpen(false)
+      else onExit3D?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [panelOpen, onExit3D])
+
   return (
     <>
       {/* 底部 hover 触发区（透明，扩大触发范围） */}
@@ -1593,10 +1609,10 @@ export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings,
         }}
       />
 
-      {/* 左上返回按钮（面板打开时也保留） */}
+      {/* 左上返回按钮（面板打开时保持可见，不随鼠标静止淡出） */}
       <CornerButton
         position="top-left"
-        visible={cornersVisible}
+        visible={cornersVisible || panelOpen}
         onClick={() => onExit3D?.()}
         icon={<IconBack />}
       />
@@ -1604,7 +1620,7 @@ export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings,
       {/* 右上按钮（面板打开时变成关闭按钮） */}
       <CornerButton
         position="top-right"
-        visible={cornersVisible}
+        visible={cornersVisible || panelOpen}
         onClick={() => setPanelOpen(!panelOpen)}
         icon={panelOpen ? <IconClose /> : <IconMenu />}
         highlight={panelOpen}
