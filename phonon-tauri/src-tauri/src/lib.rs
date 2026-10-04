@@ -4,7 +4,6 @@
 //! for the Phonon audio framework.
 
 pub mod commands;
-pub mod events;
 pub mod state;
 
 #[cfg(target_os = "windows")]

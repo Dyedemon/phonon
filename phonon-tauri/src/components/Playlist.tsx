@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useI18n } from '../i18n'
 import { getTrackByPath, type TrackInfo } from '../api/library'
 import { type UserPlaylist } from '../api/queue'
@@ -61,6 +62,20 @@ export default function Playlist({ onUpdate, compact: _compact, addToast: _addTo
 
   useEffect(() => {
     refresh()
+  }, [refresh])
+
+  // 队列从任意来源变更（3D 控制台、拖入文件、清空等）都自动刷新——
+  // 五个队列变更命令在 Rust 侧 emit 'queue-changed'
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    let cancelled = false
+    listen('queue-changed', () => { void refresh() })
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+      if (unlisten) unlisten()
+    }
   }, [refresh])
 
   // Resolve library TrackInfo for each queue item (path → TrackInfo).

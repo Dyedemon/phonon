@@ -659,6 +659,7 @@ pub struct AddToQueueResult {
 
 #[tauri::command]
 pub fn add_to_queue(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     paths: Vec<String>,
 ) -> Result<AddToQueueResult, String> {
@@ -711,11 +712,13 @@ pub fn add_to_queue(
             }
         }
     }
+    let _ = app.emit("queue-changed", ());
     Ok(AddToQueueResult { added, duplicates })
 }
 
 #[tauri::command]
 pub fn add_cue_to_queue(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     path: String,
 ) -> Result<AddToQueueResult, String> {
@@ -751,11 +754,16 @@ pub fn add_cue_to_queue(
             *pl = paths;
         }
     }
+    let _ = app.emit("queue-changed", ());
     Ok(AddToQueueResult { added, duplicates })
 }
 
 #[tauri::command]
-pub fn remove_from_queue(state: State<'_, AppState>, indices: Vec<usize>) -> Result<(), String> {
+pub fn remove_from_queue(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    indices: Vec<usize>,
+) -> Result<(), String> {
     state.engine.remove_from_queue(&indices);
     // Only sync to playlist for non-system playlists
     let active = state.active_playlist.lock().unwrap();
@@ -767,11 +775,18 @@ pub fn remove_from_queue(state: State<'_, AppState>, indices: Vec<usize>) -> Res
             *pl = paths;
         }
     }
+    drop(active);
+    let _ = app.emit("queue-changed", ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn reorder_queue(state: State<'_, AppState>, from: usize, to: usize) -> Result<(), String> {
+pub fn reorder_queue(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    from: usize,
+    to: usize,
+) -> Result<(), String> {
     state.engine.reorder_queue(from, to);
     // Only sync to playlist for non-system playlists
     let active = state.active_playlist.lock().unwrap();
@@ -783,6 +798,8 @@ pub fn reorder_queue(state: State<'_, AppState>, from: usize, to: usize) -> Resu
             *pl = paths;
         }
     }
+    drop(active);
+    let _ = app.emit("queue-changed", ());
     Ok(())
 }
 
@@ -792,8 +809,9 @@ pub fn get_queue(state: State<'_, AppState>) -> Result<Vec<QueueItem>, String> {
 }
 
 #[tauri::command]
-pub fn clear_queue(state: State<'_, AppState>) -> Result<(), String> {
+pub fn clear_queue(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     state.engine.clear_queue();
+    let _ = app.emit("queue-changed", ());
     Ok(())
 }
 
