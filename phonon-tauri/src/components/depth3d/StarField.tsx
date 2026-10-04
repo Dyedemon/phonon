@@ -28,10 +28,11 @@ export function StarField({ audioRef, quality }: Props) {
   const initFadeRef = useRef(0)
 
   // ─── 银河底：一次性 CPU 烘焙到 CanvasTexture（零每帧采样成本之外的开销） ───
-  // 设计原则（用户反馈）：深空要"空"，宇宙元素是点缀而不是包裹——
-  // 银河带只覆盖部分方位角（两端高斯收尾，不环绕整圈），另点几枚离散的
-  // 远星系涂斑。逐像素写 ImageData（canvas 渐变会被 Chromium 抖动渲染，
-  // 量化出网状纹理）；噪声全部整数周期正弦，水平方向天然无缝
+  // 设计原则（用户反馈）：深空要"空"，银河带只覆盖部分方位角且不环绕；
+  // 离散涂斑已全部删除——galaxy 缓慢漂移 + 相机自由 orbit，任何一枚
+  // 都会时不时转到右上角被当成"脏块"（两轮反馈）。逐像素写 ImageData
+  // （canvas 渐变会被 Chromium 抖动渲染，量化出网状纹理）；噪声全部
+  // 整数周期正弦，水平方向天然无缝
   const galaxyTex = useMemo(() => {
     const w = 2048
     const h = 1024
@@ -47,9 +48,6 @@ export function StarField({ audioRef, quality }: Props) {
     const base = [5, 7, 24]
     const tintA = [108, 128, 255]
     const tintB = [172, 134, 255]
-    // 离散远星系涂斑：已按用户要求全部移除（右上角那道斜痕即其中之一），
-    // 深空只保留银河带 + 星流两个元素
-    const smudges: { cx: number; cy: number; rx: number; ry: number; rot: number; c: number[]; a: number }[] = []
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
         const u = x / cw
@@ -68,28 +66,10 @@ export function StarField({ audioRef, quality }: Props) {
         const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
         a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
         a = Math.max(0, Math.min(1, a))
-        // 离散星系涂斑（不受方位角包络限制，与云带取最大值避免叠亮）
-        let sr = 0, sg = 0, sb = 0, sa = 0
-        for (const s of smudges) {
-          const dxs = x - s.cx * cw
-          const dys = y - s.cy * ch
-          const cosr = Math.cos(s.rot)
-          const sinr = Math.sin(s.rot)
-          const ex = (dxs * cosr + dys * sinr) / (s.rx * cw)
-          const ey = (-dxs * sinr + dys * cosr) / (s.ry * ch)
-          const g = Math.exp(-(ex * ex + ey * ey)) * s.a
-          if (g > sa) { sr = s.c[0]; sg = s.c[1]; sb = s.c[2]; sa = g }
-        }
         const o = (y * cw + x) * 4
-        if (sa > a) {
-          px[o] = base[0] + (sr - base[0]) * sa
-          px[o + 1] = base[1] + (sg - base[1]) * sa
-          px[o + 2] = base[2] + (sb - base[2]) * sa
-        } else {
-          px[o] = base[0] + (tintA[0] + (tintB[0] - tintA[0]) * n3 - base[0]) * a
-          px[o + 1] = base[1] + (tintA[1] + (tintB[1] - tintA[1]) * n3 - base[1]) * a
-          px[o + 2] = base[2] + (tintA[2] + (tintB[2] - tintA[2]) * n3 - base[2]) * a
-        }
+        px[o] = base[0] + (tintA[0] + (tintB[0] - tintA[0]) * n3 - base[0]) * a
+        px[o + 1] = base[1] + (tintA[1] + (tintB[1] - tintA[1]) * n3 - base[1]) * a
+        px[o + 2] = base[2] + (tintA[2] + (tintB[2] - tintA[2]) * n3 - base[2]) * a
         px[o + 3] = 255
       }
     }
@@ -131,8 +111,9 @@ export function StarField({ audioRef, quality }: Props) {
   useEffect(() => () => { galaxyTex.dispose() }, [galaxyTex])
 
   const qScale = qualityScale(quality)
-  // 600/150：小星收拢成一条"星流"（见 streamGeo）之后，散点再降一档
-  const STAR_COUNT = Math.floor(600 * qScale)
+  // 750/150：用户多轮反馈后继续收敛——满天小星点太碎，碎点让位给
+  // 一条椭圆柱星流（见 streamGeo）
+  const STAR_COUNT = Math.floor(750 * qScale)
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
   // 远景星星（常亮，微闪已按用户要求移除；phase 属性随之删除）
@@ -289,38 +270,46 @@ export function StarField({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 星流：圈过的小星收拢成一条椭圆柱状的星河支流 ───
-  // 沿自身长轴（-Z）缓缓飘向远处深处：近处淡入 → 全程可见 → 远端淡出，
-  // 然后回到近处重新淡入（线性往复，不环绕不折返；用户明确要求）
+  // ─── 星流：椭圆柱粒子流（用户要求以单一流代替碎星点/彗星） ───
+  // 锚定在高纬天空，轴向指向深空；粒子沿轴流向远处并循环，
+  // 两端淡入淡出（近端浮现、远端没入），不环绕不消失
   const streamRef = useRef<THREE.Points>(null)
   const streamGeo = useMemo(() => {
-    const N = 260
+    const N = 220
+    const dir = new THREE.Vector3(0, 0.35, -0.94).normalize()
+    const e1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
+    const e2 = new THREE.Vector3().crossVectors(dir, e1).normalize()
+    const origin = new THREE.Vector3(0, 14, -22)
+    const len = 42
+
     const geo = new THREE.BufferGeometry()
-    const positions = new Float32Array(N * 3)
+    const aT = new Float32Array(N)
+    const aOffset = new Float32Array(N * 3)
+    const positions = new Float32Array(N * 3) // 静态基准位（包围球用），实际位置由 shader 计算
     const sizes = new Float32Array(N)
-    const colors = new Float32Array(N * 3)
     const alphas = new Float32Array(N)
 
     for (let i = 0; i < N; i++) {
-      const t = Math.random() // 0..1 沿轴位置（端部收细，中段饱满）
-      const axis = (t - 0.5) * 55
-      const taper = 0.4 + 0.6 * Math.sin(Math.PI * t)
-      const ang = Math.random() * Math.PI * 2
-      const rr = Math.sqrt(Math.random())
-      positions[i * 3] = Math.cos(ang) * 3.2 * rr * taper
-      positions[i * 3 + 1] = Math.sin(ang) * 1.8 * rr * taper
-      positions[i * 3 + 2] = axis
-      sizes[i] = 0.3 + Math.random() * 0.5
-      const cool = Math.random()
-      colors[i * 3] = 0.75 + cool * 0.2
-      colors[i * 3 + 1] = 0.82 + cool * 0.12
-      colors[i * 3 + 2] = 1.0
-      alphas[i] = 0.25 + Math.random() * 0.55
+      aT[i] = Math.random()
+      const th = Math.random() * Math.PI * 2
+      const rr = Math.sqrt(Math.random()) // 椭圆截面内均匀分布
+      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 1.6)
+        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 0.8))
+      aOffset[i * 3] = off.x
+      aOffset[i * 3 + 1] = off.y
+      aOffset[i * 3 + 2] = off.z
+      const base = origin.clone().add(dir.clone().multiplyScalar(aT[i] * len)).add(off)
+      positions[i * 3] = base.x
+      positions[i * 3 + 1] = base.y
+      positions[i * 3 + 2] = base.z
+      sizes[i] = 0.4 + Math.random() * 0.6
+      alphas[i] = 0.18 + Math.random() * 0.32
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geo.setAttribute('aT', new THREE.BufferAttribute(aT, 1))
+    geo.setAttribute('aOffset', new THREE.BufferAttribute(aOffset, 3))
     geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1))
     return geo
   }, [])
@@ -332,35 +321,43 @@ export function StarField({ audioRef, quality }: Props) {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     uniforms: {
+      uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uOpacity: { value: 0 },
+      uOrigin: { value: new THREE.Vector3(0, 14, -22) },
+      uDir: { value: new THREE.Vector3(0, 0.35, -0.94).normalize() },
+      uLen: { value: 42 },
     },
     vertexShader: /* glsl */`
+      attribute float aT;
+      attribute vec3 aOffset;
       attribute float size;
-      attribute vec3 color;
       attribute float alpha;
+      uniform float uTime;
       uniform float uPixelRatio;
-      varying vec3 vColor;
+      uniform vec3 uOrigin;
+      uniform vec3 uDir;
+      uniform float uLen;
       varying float vAlpha;
       void main() {
-        vColor = color;
-        vAlpha = alpha;
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        float ps = size * uPixelRatio * 80.0 / -mvPosition.z;
-        gl_PointSize = clamp(ps, 1.0, 6.0 * uPixelRatio);
+        // 沿轴流动：相位循环，粒子从近端流向远端
+        float t = fract(aT + uTime * 0.045);
+        vec3 pos = uOrigin + uDir * (t * uLen) + aOffset;
+        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+        float ps = size * uPixelRatio * 60.0 / -mvPosition.z;
+        gl_PointSize = clamp(ps, 1.0, 8.0 * uPixelRatio);
+        // 近端浮现、远端没入深处
+        vAlpha = alpha * smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.72, 1.0, t));
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: /* glsl */`
-      uniform float uOpacity;
-      varying vec3 vColor;
       varying float vAlpha;
       void main() {
         vec2 uv = gl_PointCoord - 0.5;
         float d = length(uv);
         if (d > 0.5) discard;
         float glow = smoothstep(0.5, 0.0, d);
-        gl_FragColor = vec4(vColor, pow(glow, 1.2) * vAlpha * uOpacity);
+        gl_FragColor = vec4(vec3(0.75, 0.82, 1.0), pow(glow, 1.3) * vAlpha);
       }
     `,
   }), [])
@@ -379,13 +376,10 @@ export function StarField({ audioRef, quality }: Props) {
     // 银河底极慢漂移
     if (galaxyRef.current) galaxyRef.current.rotation.y = t * 0.003
 
-    // 星流：沿 -Z 缓缓飘向远处（不环绕），远端淡出后回到近处重新淡入
+    // 星流：粒子沿轴流向深处
     if (streamRef.current) {
-      const z = streamRef.current.position.z - delta * 1.1
-      streamRef.current.position.z = z < -85 ? 20 : z
-      const mat = streamRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uOpacity.value =
-        (1 - THREE.MathUtils.smoothstep(z, 6, 18)) * THREE.MathUtils.smoothstep(z, -85, -55)
+      const m = streamRef.current.material as THREE.ShaderMaterial
+      m.uniforms.uTime.value = t
     }
 
     // 缓慢整体旋转
@@ -418,8 +412,8 @@ export function StarField({ audioRef, quality }: Props) {
       <points ref={twinkleRef} geometry={twinkleGeo}>
         <primitive object={twinkleMat} attach="material" />
       </points>
-      {/* 星流（椭圆柱状星群，缓缓飘向远处） */}
-      <points ref={streamRef} geometry={streamGeo} position={[-6, 14, 20]}>
+      {/* 星流：椭圆柱粒子流，粒子沿轴流向深处并循环（不环绕） */}
+      <points ref={streamRef} geometry={streamGeo} frustumCulled={false}>
         <primitive object={streamMat} attach="material" />
       </points>
     </group>
