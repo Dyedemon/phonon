@@ -100,7 +100,9 @@ export function StarField({ audioRef, quality }: Props) {
     }
     cctx.putImageData(img, 0, 0)
 
-    // 2) 全分辨率合成：放大云雾（插值平滑）+ 锐利暗星
+    // 2) 全分辨率合成：放大云雾（插值平滑）。
+    // 烘焙暗星已全部移除（用户反馈：跟着银河环绕的小星星）——
+    // 天空的离散星点只由亮星呼吸层与星流承担
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
@@ -108,24 +110,6 @@ export function StarField({ audioRef, quality }: Props) {
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(cloud, 0, 0, w, h)
-
-    // 暗星：六成集中在带附近（按全分辨率尺度重算带位置；散布全天的
-    // 孤星不受方位角包络限制——点状星不构成"包裹感"）
-    const bandYFull = (x: number) => h * 0.42 + Math.sin((x / w) * Math.PI * 2) * h * 0.07
-    for (let i = 0; i < 2600; i++) {
-      const near = Math.random() < 0.6
-      const x = Math.random() * w
-      const y = near ? bandYFull(x) + (Math.random() - 0.5) * h * 0.2 : Math.random() * h
-      ctx.fillStyle = 'rgba(210,220,255,' + (0.12 + Math.random() * 0.35) + ')'
-      const s = Math.random() < 0.85 ? 1 : 2
-      for (const dx of [-w, 0, w]) ctx.fillRect(x + dx, y, s, s)
-    }
-    for (let i = 0; i < 70; i++) {
-      const x = Math.random() * w
-      const y = Math.random() * h
-      ctx.fillStyle = 'rgba(235,240,255,' + (0.5 + Math.random() * 0.4) + ')'
-      for (const dx of [-w, 0, w]) ctx.fillRect(x + dx, y, 2, 2)
-    }
 
     const tex = new THREE.CanvasTexture(canvas)
     tex.colorSpace = THREE.SRGBColorSpace
