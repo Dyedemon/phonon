@@ -505,9 +505,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
     const angles = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      const r = 7.0 + Math.pow(Math.random(), 0.6) * 10.0
+      // 半径分层：环带 mesh 到 11.7 为止，星云粒子占 12.2~17——
+      // 之前 7~17 与环带完全重叠，紫色颗粒被看成环带纹理，认不出是独立一层
+      const r = 12.2 + Math.pow(Math.random(), 0.6) * 4.8
       const angle = Math.random() * Math.PI * 2
-      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 7.0) * 0.05)
+      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 12.2) * 0.06)
 
       positions[i * 3] = Math.cos(angle) * r
       positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale
@@ -518,7 +520,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       radii[i] = r
       angles[i] = angle
 
-      const hue = 0.82 - (r - 7.0) / 10.0 * 0.25
+      const hue = 0.82 - (r - 12.2) / 4.8 * 0.25
       const col = new THREE.Color().setHSL(hue, 0.65, 0.62)
       colors[i * 3] = col.r
       colors[i * 3 + 1] = col.g
@@ -604,7 +606,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
     const rotations = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      const r = 12.0 + Math.pow(Math.random(), 0.7) * 8.0
+      // 小行星带放到星云粒子带外侧（17~21.5），三层环各自占一条轨道带
+      const r = 17.0 + Math.pow(Math.random(), 0.7) * 4.5
       const angle = Math.random() * Math.PI * 2
       const heightScale = 0.2 + Math.random() * 0.35
 
@@ -892,8 +895,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // 星云粒子环
     // 星云粒子环：与行星环 mesh 共面（0.24/0.05），只保留极小的呼吸摆动
     if (ringRef.current) {
-      ringRef.current.rotation.x = 0.24 + Math.sin(t * 0.06) * 0.015
-      ringRef.current.rotation.z = 0.05 + Math.sin(t * 0.04) * 0.01
+      ringRef.current.rotation.x = 0.12 + Math.sin(t * 0.06) * 0.015
+      ringRef.current.rotation.z = 0.03 + Math.sin(t * 0.04) * 0.01
       const mat = ringRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
@@ -903,10 +906,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uPixelRatio.value = dpr
     }
 
-    // 小行星带：与环系共面（原先 -0.08 且 rotation.z 随时间翻滚，越跑越歪）
+    // 小行星带：与环系共面（0.12/0.03）
     if (asteroidRef.current) {
-      asteroidRef.current.rotation.x = 0.24
-      asteroidRef.current.rotation.z = 0.05
+      asteroidRef.current.rotation.x = 0.12
+      asteroidRef.current.rotation.z = 0.03
       const mat = asteroidRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uSpeed.value = 1 + low * 1.2 + rms * 0.8 + pulse * 1.5
@@ -966,8 +969,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         <primitive object={cloudLayerMat} attach="material" />
       </mesh>
 
-      {/* 行星环（多环带）—— 倾角加大到 ~14°，配合抬高的机位呈现土星式椭圆 */}
-      <mesh ref={planetRingRef} rotation={[0.24, 0, 0.05]}>
+      {/* 行星环（多环带）——倾角收到 0.12：系统平面接近平整，椭圆感交给相机俯角 */}
+      <mesh ref={planetRingRef} rotation={[0.12, 0, 0.03]}>
         <ringGeometry args={[PLANET_RADIUS * 1.3, PLANET_RADIUS * 2.6, q.ringSeg]} />
         <primitive object={ringMat} attach="material" />
       </mesh>
@@ -979,7 +982,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       </mesh>
 
       {/* 卫星系统：与环系共面（倾角同行星环），卫星 2 保留 0.08 rad 自然偏角 */}
-      <group rotation={[0.24, 0, 0.05]}>
+      <group rotation={[0.12, 0, 0.03]}>
         {/* 卫星1（岩石卫星） */}
         <mesh ref={moonRef}>
           <sphereGeometry args={[0.65, Math.floor(q.cloudSeg * 0.5), Math.floor(q.cloudSeg * 0.5)]} />

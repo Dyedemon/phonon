@@ -27,8 +27,9 @@ export function StarField({ audioRef, quality }: Props) {
   const initFadeRef = useRef(0)
 
   const qScale = qualityScale(quality)
-  const STAR_COUNT = Math.floor(2000 * qScale)
-  const TWINKLE_COUNT = Math.floor(300 * qScale)
+  // 数量收到 1400/150：之前 2000/300 在长会话里视觉噪音偏大（用户反馈）
+  const STAR_COUNT = Math.floor(1400 * qScale)
+  const TWINKLE_COUNT = Math.floor(150 * qScale)
 
   // 远景星星（固定，微闪）
   const starsGeo = useMemo(() => {
@@ -77,8 +78,8 @@ export function StarField({ audioRef, quality }: Props) {
       varying float vAlpha;
 
       void main() {
-        // 闪烁
-        float twinkle = sin(uTime * 1.5 + phase) * 0.3 + 0.7;
+        // 微闪：放慢频率、压小幅度，安静夜空而不是频闪
+        float twinkle = sin(uTime * 0.8 + phase) * 0.2 + 0.8;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         // 相机会飞进星壳（maxDistance 45 > 内壳 40）：近距星被按距离反比
@@ -160,7 +161,8 @@ export function StarField({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        float twinkle = sin(uTime * 3.0 + phase) * 0.5 + 0.5;
+        // 闪烁星：频率 3.0→1.2、幅度 0.5→0.35——之前像频闪灯（用户反馈"闪得太频繁"）
+        float twinkle = sin(uTime * 1.2 + phase) * 0.35 + 0.65;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         // 同普通星层：钳制点径 + 近距淡出，杜绝近掠星变成大灰斑
