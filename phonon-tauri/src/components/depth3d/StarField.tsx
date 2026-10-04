@@ -21,10 +21,9 @@ function qualityScale(quality?: string) {
 
 // 远景星空 — 银河底 + 亮星呼吸层 + 星流
 // （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
-// 星流端点：起点在默认机位画面左缘外（"镜头尽头"），随流身延伸入视野深处
-// （用户要求：起点改到镜头尽头，整体加大加长）
-const STREAM_A = new THREE.Vector3(-32, 3, 2)
-const STREAM_B = new THREE.Vector3(25, 34, -75)
+// 星流端点：整体推离行星（近端 |45|、远端 |93|，贴近银河球内侧）
+const STREAM_A = new THREE.Vector3(-45, 4, 3)
+const STREAM_B = new THREE.Vector3(28, 38, -80)
 const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
 const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
 
@@ -142,16 +141,16 @@ export function StarField({ audioRef, quality }: Props) {
     const colors = new Float32Array(TWINKLE_COUNT * 3)
 
     for (let i = 0; i < TWINKLE_COUNT; i++) {
-      // 半径偏置：sqrt 让大多数星落在远壳（50~72），近处只留少量
-      // （用户要求：离球越远星越多，近处有但不能多）
-      const r = 34 + 38 * Math.sqrt(Math.random())
+      // 星壳推到银河距离（80~94，紧贴银河球内侧）——用户要求亮星层
+      // 静止且"迎合银河的最近处"；单粒加大补偿远距离
+      const r = 80 + 14 * Math.random()
       const theta = Math.random() * Math.PI * 2
       const phi = Math.acos(2 * Math.random() - 1)
       positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
       positions[i * 3 + 2] = r * Math.cos(phi)
 
-      sizes[i] = 1.0 + Math.random() * 1.5
+      sizes[i] = 1.2 + Math.random() * 1.8
       phases[i] = Math.random() * Math.PI * 2
 
       // 白偏蓝/偏粉
@@ -330,8 +329,8 @@ export function StarField({ audioRef, quality }: Props) {
     }
 
     // 亮星呼吸层
+    // 亮星呼吸层（静止——用户要求停掉环绕旋转）
     if (twinkleRef.current) {
-      twinkleRef.current.rotation.y = -t * 0.015
       const mat = twinkleRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.3 + hi * 0.3
