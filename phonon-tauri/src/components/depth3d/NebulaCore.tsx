@@ -472,11 +472,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
     const angles = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      // 半径分层：环带 mesh 到 11.7 为止，星云粒子占 12.2~17——
-      // 之前 7~17 与环带完全重叠，紫色颗粒被看成环带纹理，认不出是独立一层
-      const r = 12.2 + Math.pow(Math.random(), 0.6) * 4.8
+      // 半径分层：环带 mesh 到 8.55 为止，星云粒子占 14.8~20——
+      // 与环带保持明显空隙（用户要求离球再远一点）
+      const r = 14.8 + Math.pow(Math.random(), 0.6) * 5.2
       const angle = Math.random() * Math.PI * 2
-      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 12.2) * 0.06)
+      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 14.8) * 0.06)
 
       positions[i * 3] = Math.cos(angle) * r
       positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale
@@ -487,7 +487,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       radii[i] = r
       angles[i] = angle
 
-      const hue = 0.82 - (r - 12.2) / 4.8 * 0.25
+      const hue = 0.82 - (r - 14.8) / 5.2 * 0.25
       const col = new THREE.Color().setHSL(hue, 0.65, 0.62)
       colors[i * 3] = col.r
       colors[i * 3 + 1] = col.g
