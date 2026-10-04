@@ -47,13 +47,9 @@ export function StarField({ audioRef, quality }: Props) {
     const base = [5, 7, 24]
     const tintA = [108, 128, 255]
     const tintB = [172, 134, 255]
-    // 离散远星系涂斑（小画布坐标，椭圆高斯，各自色调/倾角）
-    // （原本右上角还有一枚最大的——用户要求去掉）
-    const smudges = [
-      { cx: 0.16, cy: 0.28, rx: 0.05, ry: 0.018, rot: 0.5, c: [150, 160, 255], a: 0.3 },
-      { cx: 0.62, cy: 0.24, rx: 0.028, ry: 0.012, rot: -0.4, c: [190, 170, 230], a: 0.24 },
-      { cx: 0.4, cy: 0.78, rx: 0.035, ry: 0.014, rot: -0.7, c: [160, 150, 240], a: 0.22 },
-    ]
+    // 离散远星系涂斑：已按用户要求全部移除（右上角那道斜痕即其中之一），
+    // 深空只保留银河带 + 星流两个元素
+    const smudges: { cx: number; cy: number; rx: number; ry: number; rot: number; c: number[]; a: number }[] = []
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
         const u = x / cw
@@ -135,9 +131,8 @@ export function StarField({ audioRef, quality }: Props) {
   useEffect(() => () => { galaxyTex.dispose() }, [galaxyTex])
 
   const qScale = qualityScale(quality)
-  // 750/150：用户多轮反馈后继续收敛——满天小星点太碎，天空的主角
-  // 让给一条缓慢前进的彗星（见 cometGeo）
-  const STAR_COUNT = Math.floor(750 * qScale)
+  // 600/150：小星收拢成一条"星流"（见 streamGeo）之后，散点再降一档
+  const STAR_COUNT = Math.floor(600 * qScale)
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
   // 远景星星（常亮，微闪已按用户要求移除；phase 属性随之删除）
@@ -294,12 +289,12 @@ export function StarField({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 彗星：一条缓慢匀速前进的天空主角（用户要求以单一代替满天小星） ───
-  // 亮核 + 渐隐尾迹（沿 -X 展开），整体沿 +X 匀速漂移，滑出后从另一侧循环。
-  // 高纬路径（y=20, z=-30），远离环系与行星
-  const cometRef = useRef<THREE.Points>(null)
-  const cometGeo = useMemo(() => {
-    const N = 90
+  // ─── 星流：圈过的小星收拢成一条椭圆柱状的星河支流 ───
+  // 沿自身长轴（-Z）缓缓飘向远处深处：近处淡入 → 全程可见 → 远端淡出，
+  // 然后回到近处重新淡入（线性往复，不环绕不折返；用户明确要求）
+  const streamRef = useRef<THREE.Points>(null)
+  const streamGeo = useMemo(() => {
+    const N = 260
     const geo = new THREE.BufferGeometry()
     const positions = new Float32Array(N * 3)
     const sizes = new Float32Array(N)
@@ -307,21 +302,20 @@ export function StarField({ audioRef, quality }: Props) {
     const alphas = new Float32Array(N)
 
     for (let i = 0; i < N; i++) {
-      const t = i / (N - 1) // 0 = 亮核，1 = 尾末端
-      const tailLen = 26
-      const spread = t * t * 1.6
-      positions[i * 3] = -t * tailLen - Math.random() * 0.4
-      positions[i * 3 + 1] = (Math.random() - 0.5) * spread
-      positions[i * 3 + 2] = (Math.random() - 0.5) * spread
-      sizes[i] = i === 0 ? 3.2 : 1.5 * (1 - t) + 0.25
-      // 核偏冷白，尾部偏蓝
-      const c = i === 0
-        ? [0.92, 0.96, 1.0]
-        : [0.62 - t * 0.15, 0.74 - t * 0.18, 1.0]
-      colors[i * 3] = c[0]
-      colors[i * 3 + 1] = c[1]
-      colors[i * 3 + 2] = c[2]
-      alphas[i] = i === 0 ? 1.0 : Math.pow(1 - t, 1.4) * 0.8
+      const t = Math.random() // 0..1 沿轴位置（端部收细，中段饱满）
+      const axis = (t - 0.5) * 55
+      const taper = 0.4 + 0.6 * Math.sin(Math.PI * t)
+      const ang = Math.random() * Math.PI * 2
+      const rr = Math.sqrt(Math.random())
+      positions[i * 3] = Math.cos(ang) * 3.2 * rr * taper
+      positions[i * 3 + 1] = Math.sin(ang) * 1.8 * rr * taper
+      positions[i * 3 + 2] = axis
+      sizes[i] = 0.3 + Math.random() * 0.5
+      const cool = Math.random()
+      colors[i * 3] = 0.75 + cool * 0.2
+      colors[i * 3 + 1] = 0.82 + cool * 0.12
+      colors[i * 3 + 2] = 1.0
+      alphas[i] = 0.25 + Math.random() * 0.55
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -331,14 +325,15 @@ export function StarField({ audioRef, quality }: Props) {
     return geo
   }, [])
 
-  useEffect(() => () => { cometGeo.dispose() }, [cometGeo])
+  useEffect(() => () => { streamGeo.dispose() }, [streamGeo])
 
-  const cometMat = useMemo(() => new THREE.ShaderMaterial({
+  const streamMat = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     uniforms: {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      uOpacity: { value: 0 },
     },
     vertexShader: /* glsl */`
       attribute float size;
@@ -351,12 +346,13 @@ export function StarField({ audioRef, quality }: Props) {
         vColor = color;
         vAlpha = alpha;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        float ps = size * uPixelRatio * 90.0 / -mvPosition.z;
-        gl_PointSize = clamp(ps, 1.0, 16.0 * uPixelRatio);
+        float ps = size * uPixelRatio * 80.0 / -mvPosition.z;
+        gl_PointSize = clamp(ps, 1.0, 6.0 * uPixelRatio);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: /* glsl */`
+      uniform float uOpacity;
       varying vec3 vColor;
       varying float vAlpha;
       void main() {
@@ -364,7 +360,7 @@ export function StarField({ audioRef, quality }: Props) {
         float d = length(uv);
         if (d > 0.5) discard;
         float glow = smoothstep(0.5, 0.0, d);
-        gl_FragColor = vec4(vColor, pow(glow, 1.3) * vAlpha);
+        gl_FragColor = vec4(vColor, pow(glow, 1.2) * vAlpha * uOpacity);
       }
     `,
   }), [])
@@ -383,10 +379,13 @@ export function StarField({ audioRef, quality }: Props) {
     // 银河底极慢漂移
     if (galaxyRef.current) galaxyRef.current.rotation.y = t * 0.003
 
-    // 彗星：匀速前进，滑出后循环
-    if (cometRef.current) {
-      cometRef.current.position.x += delta * 0.55
-      if (cometRef.current.position.x > 65) cometRef.current.position.x = -65
+    // 星流：沿 -Z 缓缓飘向远处（不环绕），远端淡出后回到近处重新淡入
+    if (streamRef.current) {
+      const z = streamRef.current.position.z - delta * 1.1
+      streamRef.current.position.z = z < -85 ? 20 : z
+      const mat = streamRef.current.material as THREE.ShaderMaterial
+      mat.uniforms.uOpacity.value =
+        (1 - THREE.MathUtils.smoothstep(z, 6, 18)) * THREE.MathUtils.smoothstep(z, -85, -55)
     }
 
     // 缓慢整体旋转
@@ -419,9 +418,9 @@ export function StarField({ audioRef, quality }: Props) {
       <points ref={twinkleRef} geometry={twinkleGeo}>
         <primitive object={twinkleMat} attach="material" />
       </points>
-      {/* 彗星（高纬天空，一条固定方向的前进元素） */}
-      <points ref={cometRef} geometry={cometGeo} position={[-60, 20, -30]}>
-        <primitive object={cometMat} attach="material" />
+      {/* 星流（椭圆柱状星群，缓缓飘向远处） */}
+      <points ref={streamRef} geometry={streamGeo} position={[-6, 14, 20]}>
+        <primitive object={streamMat} attach="material" />
       </points>
     </group>
   )
