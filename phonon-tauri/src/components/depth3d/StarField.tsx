@@ -78,15 +78,13 @@ export function StarField({ audioRef, quality }: Props) {
       varying float vAlpha;
 
       void main() {
-        // 微闪：放慢频率、压小幅度，安静夜空而不是频闪
-        float twinkle = sin(uTime * 0.8 + phase) * 0.2 + 0.8;
-
+        // 远景星层常亮：用户两轮反馈后彻底去掉闪烁（音乐响应保留在 uIntensity）
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         // 相机会飞进星壳（maxDistance 45 > 内壳 40）：近距星被按距离反比
         // 放大成几十像素的失焦灰斑——钳制最大点径 + 近距淡出双保险
         float depth = -mvPosition.z;
         gl_PointSize = min(size * uPixelRatio * 1.5 / depth * 80.0, 5.0 * uPixelRatio);
-        vAlpha = twinkle * uIntensity * smoothstep(6.0, 20.0, depth);
+        vAlpha = 0.85 * uIntensity * smoothstep(6.0, 20.0, depth);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -161,8 +159,8 @@ export function StarField({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        // 闪烁星：频率 3.0→1.2、幅度 0.5→0.35——之前像频闪灯（用户反馈"闪得太频繁"）
-        float twinkle = sin(uTime * 1.2 + phase) * 0.35 + 0.65;
+        // 亮星层只留极轻呼吸（幅度 0.15），不再有可察觉的"一闪一闪"
+        float twinkle = sin(uTime * 0.6 + phase) * 0.15 + 0.85;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         // 同普通星层：钳制点径 + 近距淡出，杜绝近掠星变成大灰斑

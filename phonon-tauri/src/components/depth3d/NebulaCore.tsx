@@ -418,8 +418,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float r = length(center) * 2.0;
         float angle = atan(center.y, center.x);
 
-        // 单一环带：两端软过渡，外缘渐淡
-        float band = smoothstep(0.50, 0.58, r) * (1.0 - smoothstep(0.86, 1.0, r));
+        // 单一环带：几何为 1.35R~2.2R（归一化 r ≈ 0.614~1.0），两端软过渡
+        float band = smoothstep(0.61, 0.66, r) * (1.0 - smoothstep(0.86, 1.0, r));
 
         // 纹理：径向条纹 + 周向结构。
         // 角度必须周期化采样：atan 在 ±π 处跳变 2π，直接乘频率会让噪声
@@ -430,7 +430,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float tex = radialN * 0.55 + angN * 0.45;
 
         // 颜色：内缘蓝紫 → 外缘冰蓝，越靠外越淡
-        float t = clamp((r - 0.5) / 0.5, 0.0, 1.0);
+        float t = clamp((r - 0.61) / 0.39, 0.0, 1.0);
         vec3 col = mix(vec3(0.5, 0.5, 1.0), vec3(0.65, 0.75, 1.0), t);
 
         // 环的光照（朝向光的一侧更亮）
@@ -800,9 +800,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
         <primitive object={cloudLayerMat} attach="material" />
       </mesh>
 
-      {/* 行星环（单一环带）——倾角收到 0.12：系统平面接近平整，椭圆感交给相机俯角 */}
+      {/* 行星环（单一环带）——收窄一号：1.35R~2.2R，倾角 0.12 */}
       <mesh ref={planetRingRef} rotation={[0.12, 0, 0.03]}>
-        <ringGeometry args={[PLANET_RADIUS * 1.3, PLANET_RADIUS * 2.6, q.ringSeg]} />
+        <ringGeometry args={[PLANET_RADIUS * 1.35, PLANET_RADIUS * 2.2, q.ringSeg]} />
         <primitive object={ringMat} attach="material" />
       </mesh>
 
