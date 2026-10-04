@@ -23,8 +23,70 @@ function qualityScale(quality?: string) {
 export function StarField({ audioRef, quality }: Props) {
   const starsRef = useRef<THREE.Points>(null)
   const twinkleRef = useRef<THREE.Points>(null)
+  const galaxyRef = useRef<THREE.Mesh>(null)
   const hiSmRef = useRef(0)
   const initFadeRef = useRef(0)
+
+  // ─── 银河底：一次性 CPU 烘焙到 CanvasTexture（零每帧采样成本之外的开销） ───
+  // 背景原来是纯色，深空没有纵深。斜向银河带 + 尘埃暗纹 + 密集暗星，
+  // 所有绘制水平补一份（x±w）保证 equirect 左右无缝
+  const galaxyTex = useMemo(() => {
+    const w = 2048
+    const h = 1024
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#050718'
+    ctx.fillRect(0, 0, w, h)
+
+    const bandY = (x: number) => h * 0.5 + Math.sin((x / w) * Math.PI * 2 * 1.5) * h * 0.1
+    const blob = (x: number, y: number, r: number, color: string) => {
+      for (const dx of [-w, 0, w]) {
+        const g = ctx.createRadialGradient(x + dx, y, 0, x + dx, y, r)
+        g.addColorStop(0, color)
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(x + dx - r, y - r, r * 2, r * 2)
+      }
+    }
+
+    // 银河带：沿正弦曲线叠柔光斑（蓝紫青三族）
+    const tints = ['rgba(110,130,255,0.05)', 'rgba(150,120,255,0.045)', 'rgba(90,170,230,0.04)', 'rgba(180,150,255,0.035)']
+    for (let i = 0; i < 260; i++) {
+      const x = (i / 260) * w + Math.random() * 14
+      const y = bandY(x) + (Math.random() - 0.5) * h * 0.16
+      blob(x, y, 50 + Math.random() * 150, tints[Math.floor(Math.random() * tints.length)])
+    }
+    // 尘埃暗纹
+    for (let i = 0; i < 50; i++) {
+      const x = Math.random() * w
+      const y = bandY(x) + (Math.random() - 0.5) * h * 0.1
+      blob(x, y, 30 + Math.random() * 90, 'rgba(4,6,20,0.28)')
+    }
+    // 密集暗星：六成集中在带附近
+    for (let i = 0; i < 2600; i++) {
+      const near = Math.random() < 0.6
+      const x = Math.random() * w
+      const y = near ? bandY(x) + (Math.random() - 0.5) * h * 0.22 : Math.random() * h
+      ctx.fillStyle = `rgba(210,220,255,${0.12 + Math.random() * 0.35})`
+      const s = Math.random() < 0.85 ? 1 : 2
+      for (const dx of [-w, 0, w]) ctx.fillRect(x + dx, y, s, s)
+    }
+    // 少量亮星
+    for (let i = 0; i < 70; i++) {
+      const x = Math.random() * w
+      const y = Math.random() * h
+      ctx.fillStyle = `rgba(235,240,255,${0.5 + Math.random() * 0.4})`
+      for (const dx of [-w, 0, w]) ctx.fillRect(x + dx, y, 2, 2)
+    }
+
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+  }, [])
+
+  useEffect(() => () => { galaxyTex.dispose() }, [galaxyTex])
 
   const qScale = qualityScale(quality)
   // 1000/150：用户反馈最小星星太多；尺寸下限同步抬高（0.45 起），
@@ -202,6 +264,9 @@ export function StarField({ audioRef, quality }: Props) {
     // 粒子尺寸跟随画布实际 dpr（governor 降档时不突变）
     const dpr = viewport.dpr || 1
 
+    // 银河底极慢漂移
+    if (galaxyRef.current) galaxyRef.current.rotation.y = t * 0.003
+
     // 缓慢整体旋转
     if (starsRef.current) {
       starsRef.current.rotation.y = t * 0.01
@@ -222,6 +287,11 @@ export function StarField({ audioRef, quality }: Props) {
 
   return (
     <group>
+      {/* 银河底：远球内侧一次烘焙贴图。fog 必须关——场景雾 far=65，95 距离会被整个吞掉 */}
+      <mesh ref={galaxyRef}>
+        <sphereGeometry args={[95, 32, 16]} />
+        <meshBasicMaterial map={galaxyTex} side={THREE.BackSide} depthWrite={false} fog={false} toneMapped={false} />
+      </mesh>
       <points ref={starsRef} geometry={starsGeo}>
         <primitive object={starsMat} attach="material" />
       </points>

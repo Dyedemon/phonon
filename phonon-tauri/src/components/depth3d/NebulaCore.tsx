@@ -83,9 +83,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const lastBeatRef = useRef(false)
   const beatCooldownRef = useRef(0)
   const startTimeRef = useRef(0)
-  const initFadeRef = useRef(0) // 启动淡入：0→1，前 1.5 秒
+  const initFadeRef = useRef(0) // 启动淡入：0→1，约 1.1 秒
+  const ringWaveRef = useRef(1) // 环带节拍波进度：1 = 空闲，beat 时归 0
 
-  // ─── 行星表面 shader ─── 超精细：地形8层 + 海洋高光 + 云影 + 极光 + 火山 + 城市光
+  // ─── 行星表面 shader ─── 分层地形 + 海洋高光 + 黄昏带 + 极光 + 火山 + 城市光
+  // （噪声八度已按性能预算削减；"云影"目前是标量近似，真采样待烘焙包）
   const planetMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -375,6 +377,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uTime: { value: 0 },
       uLow: { value: 0 },
       uPulse: { value: 0 },
+      uWave: { value: 1 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
     vertexShader: /* glsl */`
@@ -390,6 +393,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uniform float uTime;
       uniform float uLow;
       uniform float uPulse;
+      uniform float uWave;
       uniform vec3 uLightDir;
       varying vec2 vUv;
       varying vec3 vPos;
@@ -438,7 +442,14 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float ringLight = 0.6 + 0.4 * max(0.0, lightAngle);
 
         float profile = 1.0 - t * 0.35;
-        float alpha = band * tex * profile * ringLight * (0.35 + uLow * 0.3 + uPulse * 0.25);
+
+        // 节拍波：beat 触发（JS 置 uWave=0），亮环从内缘向外缘传播 ~1.2s，
+        // 走完时平滑熄灭——打击感带方向，而不是整体一闪
+        float waveR = mix(0.763, 1.0, uWave);
+        float wave = exp(-pow((r - waveR) * 22.0, 2.0)) * (1.0 - smoothstep(0.85, 1.0, uWave));
+
+        float alpha = band * tex * profile * ringLight * (0.35 + uLow * 0.3 + uPulse * 0.25)
+          + band * wave * 0.45;
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -690,6 +701,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // 启动前 0.8 秒完全屏蔽 beat
     if (elapsed > 0.8 && d.beat && !lastBeatRef.current && beatCooldownRef.current <= 0) {
       beatPulseRef.current = 0.18 * fade
+      ringWaveRef.current = 0
       beatCooldownRef.current = 8 // 至少 8 帧冷却（约 130ms @60fps）
     }
     beatPulseRef.current *= 0.68
@@ -740,6 +752,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
       mat.uniforms.uPulse.value = pulse
+      ringWaveRef.current = Math.min(1, ringWaveRef.current + delta / 1.2)
+      mat.uniforms.uWave.value = ringWaveRef.current
     }
 
     // 小行星带：与环系共面（0.12/0.03），播放时随能量加速旋转
