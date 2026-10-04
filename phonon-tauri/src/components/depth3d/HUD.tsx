@@ -162,7 +162,9 @@ export function BottomPlayBar({ visible, onHoverChange, playback, volume, onVolu
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
     dragProgressRef.current = ratio
     if (commit) {
-      invoke('seek', { position_secs: ratio * dur }).catch(() => {})
+      // Tauri v2 的命令参数从 JS 侧必须用 camelCase（Rust 侧 snake_case
+      // 自动映射）——position_secs 会被静默拒绝，表现为进度条拖不动
+      invoke('seek', { positionSecs: ratio * dur }).catch(() => {})
     }
   }, [dur])
 
@@ -366,43 +368,52 @@ export function BottomPlayBar({ visible, onHoverChange, playback, volume, onVolu
             textAlign: 'right',
             flexShrink: 0,
           }}>{fmt(draggingProgressRef.current ? dragProgressRef.current * (dur || 0) : pos)}</span>
+          {/* 16px 热区包住 3px 视觉条：裸 3px 的 mousedown 目标几乎点不中 */}
           <div
             ref={progressRef}
             onMouseDown={handleProgressMouseDown}
             style={{
               flex: 1,
-              height: 3,
-              borderRadius: 1.5,
-              background: 'rgba(80, 110, 180, 0.18)',
+              height: 16,
+              display: 'flex',
+              alignItems: 'center',
               cursor: 'pointer',
               position: 'relative',
               minWidth: 0,
             }}
           >
             <div style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              height: '100%',
-              width: `${displayProgress * 100}%`,
+              position: 'relative',
+              width: '100%',
+              height: 3,
               borderRadius: 1.5,
-              background: 'linear-gradient(90deg, #7cb0ff, #c8a0ff)',
-              boxShadow: '0 0 8px rgba(124, 176, 255, 0.6)',
-              pointerEvents: 'none',
-            }} />
-            <div style={{
-              position: 'absolute',
-              left: `${displayProgress * 100}%`,
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background: '#fff',
-              boxShadow: '0 0 6px rgba(200, 220, 255, 0.8)',
-              opacity: progress > 0 ? 1 : 0,
-              pointerEvents: 'none',
-            }} />
+              background: 'rgba(80, 110, 180, 0.18)',
+            }}>
+              <div style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                height: '100%',
+                width: `${displayProgress * 100}%`,
+                borderRadius: 1.5,
+                background: 'linear-gradient(90deg, #7cb0ff, #c8a0ff)',
+                boxShadow: '0 0 8px rgba(124, 176, 255, 0.6)',
+                pointerEvents: 'none',
+              }} />
+              <div style={{
+                position: 'absolute',
+                left: `${displayProgress * 100}%`,
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: '#fff',
+                boxShadow: '0 0 6px rgba(200, 220, 255, 0.8)',
+                opacity: progress > 0 ? 1 : 0,
+                pointerEvents: 'none',
+              }} />
+            </div>
           </div>
           <span style={{
             fontSize: 10,
@@ -427,37 +438,45 @@ export function BottomPlayBar({ visible, onHoverChange, playback, volume, onVolu
             onMouseDown={handleVolMouseDown}
             style={{
               width: 70,
-              height: 3,
-              borderRadius: 1.5,
-              background: 'rgba(80, 110, 180, 0.18)',
-              position: 'relative',
+              height: 16,
+              display: 'flex',
+              alignItems: 'center',
               cursor: 'grab',
               userSelect: 'none',
+              position: 'relative',
             }}
           >
             <div style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              height: '100%',
-              width: `${localVol}%`,
+              position: 'relative',
+              width: '100%',
+              height: 3,
               borderRadius: 1.5,
-              background: 'linear-gradient(90deg, #7cb0ff, #c8a0ff)',
-              boxShadow: '0 0 6px rgba(124, 176, 255, 0.5)',
-              pointerEvents: 'none',
-            }} />
-            <div style={{
-              position: 'absolute',
-              left: `${localVol}%`,
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background: '#fff',
-              boxShadow: '0 0 6px rgba(200, 220, 255, 0.7)',
-              pointerEvents: 'none',
-            }} />
+              background: 'rgba(80, 110, 180, 0.18)',
+            }}>
+              <div style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                height: '100%',
+                width: `${localVol}%`,
+                borderRadius: 1.5,
+                background: 'linear-gradient(90deg, #7cb0ff, #c8a0ff)',
+                boxShadow: '0 0 6px rgba(124, 176, 255, 0.5)',
+                pointerEvents: 'none',
+              }} />
+              <div style={{
+                position: 'absolute',
+                left: `${localVol}%`,
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: '#fff',
+                boxShadow: '0 0 6px rgba(200, 220, 255, 0.7)',
+                pointerEvents: 'none',
+              }} />
+            </div>
           </div>
           <span style={{
             fontSize: 10,
@@ -629,7 +648,7 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
   }, [open, currentTrackForQueue])
 
   const handleSetDevice = (id: string) => {
-    invoke('set_device', { device_id: id })
+    invoke('set_device', { deviceId: id })
       .then(() => {
         setCurrentDeviceId(id)
         // 重新拉取设备列表以更新 is_default 状态
@@ -952,41 +971,50 @@ function PlaybackTab({ playback, volume, onVolumeChange }: { playback?: any; vol
         border: '1px solid rgba(120, 160, 255, 0.1)',
       }}>
         <div style={{ color: 'rgba(180, 200, 240, 0.65)', flexShrink: 0 }}><IconSpeaker /></div>
+        {/* 16px 热区包住 3px 视觉条（与底部播放栏一致） */}
         <div
           ref={volRef}
           onMouseDown={handleVolMouseDown}
           style={{
             flex: 1,
-            height: 3,
-            borderRadius: 1.5,
-            background: 'rgba(80, 110, 180, 0.18)',
-            position: 'relative',
+            height: 16,
+            display: 'flex',
+            alignItems: 'center',
             cursor: 'pointer',
+            position: 'relative',
           }}
         >
           <div style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            height: '100%',
-            width: `${localVol}%`,
+            position: 'relative',
+            width: '100%',
+            height: 3,
             borderRadius: 1.5,
-            background: 'linear-gradient(90deg, #7cb0ff, #c8a0ff)',
-            boxShadow: '0 0 6px rgba(124, 176, 255, 0.5)',
-            pointerEvents: 'none',
-          }} />
-          <div style={{
-            position: 'absolute',
-            left: `${localVol}%`,
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: '#fff',
-            boxShadow: '0 0 6px rgba(200, 220, 255, 0.7)',
-            pointerEvents: 'none',
-          }} />
+            background: 'rgba(80, 110, 180, 0.18)',
+          }}>
+            <div style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              height: '100%',
+              width: `${localVol}%`,
+              borderRadius: 1.5,
+              background: 'linear-gradient(90deg, #7cb0ff, #c8a0ff)',
+              boxShadow: '0 0 6px rgba(124, 176, 255, 0.5)',
+              pointerEvents: 'none',
+            }} />
+            <div style={{
+              position: 'absolute',
+              left: `${localVol}%`,
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#fff',
+              boxShadow: '0 0 6px rgba(200, 220, 255, 0.7)',
+              pointerEvents: 'none',
+            }} />
+          </div>
         </div>
         <span style={{ fontSize: 11, color: 'rgba(180, 200, 240, 0.55)', minWidth: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
           {Math.round(localVol)}%
