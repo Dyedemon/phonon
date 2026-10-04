@@ -27,8 +27,9 @@ export function StarField({ audioRef, quality }: Props) {
   const initFadeRef = useRef(0)
 
   const qScale = qualityScale(quality)
-  // 数量收到 1400/150：之前 2000/300 在长会话里视觉噪音偏大（用户反馈）
-  const STAR_COUNT = Math.floor(1400 * qScale)
+  // 1000/150：用户反馈最小星星太多；尺寸下限同步抬高（0.45 起），
+  // 最小的一档砍得最狠
+  const STAR_COUNT = Math.floor(1000 * qScale)
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
   // 远景星星（固定，微闪）
@@ -47,7 +48,7 @@ export function StarField({ audioRef, quality }: Props) {
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
       positions[i * 3 + 2] = r * Math.cos(phi)
 
-      sizes[i] = 0.3 + Math.random() * 0.6
+      sizes[i] = 0.45 + Math.random() * 0.55
       phases[i] = Math.random() * Math.PI * 2
     }
 
