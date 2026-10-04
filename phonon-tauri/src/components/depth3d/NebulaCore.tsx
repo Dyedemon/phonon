@@ -237,8 +237,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         finalCol += auroraGlow;          // 极光
         finalCol += volcanoGlow;         // 火山
 
-        // 低频发光（音乐律动，可感知的呼吸档）
-        finalCol += col * uLow * 0.25;
+        // 低频发光（音乐律动）——与大气/环带的反应同一档感知度
+        finalCol += col * uLow * 0.35;
 
         gl_FragColor = vec4(finalCol, 1.0);
       }
@@ -451,7 +451,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float dw = (r - waveR) * 22.0;
         float wave = exp(-dw * dw) * (1.0 - smoothstep(0.85, 1.0, uWave));
 
-        float alpha = band * tex * profile * ringLight * (0.35 + uLow * 0.3 + uPulse * 0.25)
+        // 低音下常亮部分会饱和，响应系数收着（用户反馈重复低音下效果差）
+        float alpha = band * tex * profile * ringLight * (0.3 + uLow * 0.2 + uPulse * 0.2)
           + band * wave * 0.45;
         gl_FragColor = vec4(col, alpha);
       }
@@ -704,7 +705,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // 启动前 0.8 秒完全屏蔽 beat
     if (elapsed > 0.8 && d.beat && !lastBeatRef.current && beatCooldownRef.current <= 0) {
       beatPulseRef.current = 0.18 * fade
-      ringWaveRef.current = 0
+      // 波必须走完才允许下一道——重低音时 beat 间隔(~0.5s)短于波行进时间
+      // (1.2s)，连续重置会让波永远卡在内缘重启，表现为内缘频闪（用户反馈）
+      if (ringWaveRef.current >= 0.999) ringWaveRef.current = 0
       beatCooldownRef.current = 8 // 至少 8 帧冷却（约 130ms @60fps）
     }
     beatPulseRef.current *= 0.68
@@ -743,8 +746,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
       atmoRef.current.rotation.y = -t * 0.025
       const scale = 1.065 + low * 0.012 + pulse * 0.009
       atmoRef.current.scale.setScalar(scale)
+      // 大气辉光：低频响应加档——行星的"呼吸"要能与环带的反应抗衡
       const mat = atmoRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.4 + low * 0.3 + rms * 0.1 + pulse * 0.3
+      mat.uniforms.uIntensity.value = 0.4 + low * 0.5 + rms * 0.15 + pulse * 0.35
       mat.uniforms.uLow.value = low
     }
 

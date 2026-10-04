@@ -28,52 +28,64 @@ export function StarField({ audioRef, quality }: Props) {
   const initFadeRef = useRef(0)
 
   // ─── 银河底：一次性 CPU 烘焙到 CanvasTexture（零每帧采样成本之外的开销） ───
-  // 背景原来是纯色，深空没有纵深。斜向银河带 + 尘埃暗纹 + 密集暗星，
+  // 云雾先画在 512×256 小画布再放大合成：放大插值抹平低透明度渐变叠加
+  // 产生的网状量化纹理（用户反馈"网状的糊"）；暗星画在全分辨率上保持锐利。
   // 所有绘制水平补一份（x±w）保证 equirect 左右无缝
   const galaxyTex = useMemo(() => {
     const w = 2048
     const h = 1024
+    // 1) 云雾层（小画布）
+    const cw = 512
+    const ch = 256
+    const cloud = document.createElement('canvas')
+    cloud.width = cw
+    cloud.height = ch
+    const cctx = cloud.getContext('2d')!
+    cctx.fillStyle = '#050718'
+    cctx.fillRect(0, 0, cw, ch)
+
+    const bandY = (x: number) => ch * 0.5 + Math.sin((x / cw) * Math.PI * 2 * 1.5) * ch * 0.1
+    const blob = (x: number, y: number, r: number, color: string) => {
+      for (const dx of [-cw, 0, cw]) {
+        const g = cctx.createRadialGradient(x + dx, y, 0, x + dx, y, r)
+        g.addColorStop(0, color)
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+        cctx.fillStyle = g
+        cctx.fillRect(x + dx - r, y - r, r * 2, r * 2)
+      }
+    }
+
+    const tints = ['rgba(110,130,255,0.07)', 'rgba(150,120,255,0.06)', 'rgba(90,170,230,0.055)', 'rgba(180,150,255,0.05)']
+    for (let i = 0; i < 140; i++) {
+      const x = (i / 140) * cw + Math.random() * 6
+      const y = bandY(x) + (Math.random() - 0.5) * ch * 0.16
+      blob(x, y, 25 + Math.random() * 55, tints[Math.floor(Math.random() * tints.length)])
+    }
+    for (let i = 0; i < 28; i++) {
+      const x = Math.random() * cw
+      const y = bandY(x) + (Math.random() - 0.5) * ch * 0.1
+      blob(x, y, 15 + Math.random() * 35, 'rgba(4,6,20,0.3)')
+    }
+
+    // 2) 全分辨率合成：放大云雾 + 锐利暗星
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#050718'
-    ctx.fillRect(0, 0, w, h)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(cloud, 0, 0, w, h)
 
-    const bandY = (x: number) => h * 0.5 + Math.sin((x / w) * Math.PI * 2 * 1.5) * h * 0.1
-    const blob = (x: number, y: number, r: number, color: string) => {
-      for (const dx of [-w, 0, w]) {
-        const g = ctx.createRadialGradient(x + dx, y, 0, x + dx, y, r)
-        g.addColorStop(0, color)
-        g.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx.fillStyle = g
-        ctx.fillRect(x + dx - r, y - r, r * 2, r * 2)
-      }
-    }
-
-    // 银河带：沿正弦曲线叠柔光斑（蓝紫青三族）
-    const tints = ['rgba(110,130,255,0.05)', 'rgba(150,120,255,0.045)', 'rgba(90,170,230,0.04)', 'rgba(180,150,255,0.035)']
-    for (let i = 0; i < 260; i++) {
-      const x = (i / 260) * w + Math.random() * 14
-      const y = bandY(x) + (Math.random() - 0.5) * h * 0.16
-      blob(x, y, 50 + Math.random() * 150, tints[Math.floor(Math.random() * tints.length)])
-    }
-    // 尘埃暗纹
-    for (let i = 0; i < 50; i++) {
-      const x = Math.random() * w
-      const y = bandY(x) + (Math.random() - 0.5) * h * 0.1
-      blob(x, y, 30 + Math.random() * 90, 'rgba(4,6,20,0.28)')
-    }
-    // 密集暗星：六成集中在带附近
     for (let i = 0; i < 2600; i++) {
+      const bx = Math.random() * cw
+      const by = bandY(bx) + (Math.random() - 0.5) * ch * 0.22
       const near = Math.random() < 0.6
       const x = Math.random() * w
-      const y = near ? bandY(x) + (Math.random() - 0.5) * h * 0.22 : Math.random() * h
+      const y = near ? (by / ch) * h : Math.random() * h
       ctx.fillStyle = `rgba(210,220,255,${0.12 + Math.random() * 0.35})`
       const s = Math.random() < 0.85 ? 1 : 2
       for (const dx of [-w, 0, w]) ctx.fillRect(x + dx, y, s, s)
     }
-    // 少量亮星
     for (let i = 0; i < 70; i++) {
       const x = Math.random() * w
       const y = Math.random() * h
