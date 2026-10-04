@@ -529,8 +529,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        // 随音乐能量加速旋转（低频/响度）
-        float angSpeed = speed / sqrt(radius) * 0.06 * uSpeed;
+        // 随音乐能量加速旋转（低频/响度）。系数 3.5：0.06 时角速度只有
+        // 0.0004~0.002 rad/s（一圈 30+ 分钟），肉眼等于静止——这是
+        // "小行星带没效果"的根因；现在闲时 ~90s 一圈，重低音 ~40s
+        float angSpeed = speed / sqrt(radius) * 3.5 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float tilt = sin(uTime * speed * 0.8 + rotation) * 0.1;
         vec3 pos = vec3(
