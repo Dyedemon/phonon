@@ -5,7 +5,7 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { EffectComposer, Bloom, DepthOfField, Vignette, Noise } from '@react-three/postprocessing'
+import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import { useAudioDataRef, lerp } from './depth3d/audioBridge'
 import type { SmoothedAudioData } from './depth3d/audioBridge'
@@ -90,14 +90,16 @@ export default function Depth3DPage({
   // ── 帧预算自适应：统一降级阶梯（level 越大越省）──
   // 调节器是尖峰驱动的（见 FrameGovernor）：窗口内出现多次长帧 → 降
   // 一级；连续 5 个零尖峰窗口（≈5s）且距上次降档 8s 冷却后才升一级。
-  // ultra 阶梯：满血(DoF+全分辨率) → 关DoF → 分辨率×0.8 → ×0.6 → ×0.45；
-  // 其余档位只走分辨率阶梯。分辨率用固定值而不是 [min,max] 区间——
-  // 区间会被设备 DPR 截断，产生"降了档但像素数没变"的空操作。
+  // 所有档位共用分辨率阶梯：满血 → ×0.8 → ×0.6 → ×0.45。
+  // （曾给 ultra 独配 DoF 档：focusDistance=0.012 归一化后 ≈2.5 世界
+  // 单位，焦点悬在场景前方的虚空里，全场景都在焦外——这就是"极致
+  // 比高清糊"的原因，且它是最贵的全屏 pass，直接导致 level 0 稳不住。
+  // 已整体移除。）分辨率用固定值而不是 [min,max] 区间——区间会被
+  // 设备 DPR 截断，产生"降了档但像素数没变"的空操作。
   const [level, setLevel] = useState(0)
   const levelRef = useRef(0)
   const lastDownRef = useRef(0)
-  const ultra = sceneSettings.quality === 'ultra'
-  const maxLevel = ultra ? 4 : 3
+  const maxLevel = 3
 
   const applyLevel = useCallback((next: number) => {
     levelRef.current = next
@@ -105,23 +107,20 @@ export default function Depth3DPage({
   }, [])
 
   const handleFrameDown = useCallback(() => {
-    let next = levelRef.current + 1
-    // 非 ultra 跳过 DoF 档（它本来就是关的）
-    if (!ultra && next === 1) next = 2
+    const next = levelRef.current + 1
     if (next > maxLevel) return
     lastDownRef.current = performance.now()
     applyLevel(next)
-  }, [ultra, maxLevel, applyLevel])
+  }, [applyLevel])
 
   const handleFrameUp = useCallback(() => {
     // 冷却：贴边配置会在"刚好能跑"与"尖峰"之间反复横跳——每次跳变
     // （重建 composer/重设画布）本身就是一次闪屏，必须让降档决定 sticky。
     if (performance.now() - lastDownRef.current < 8000) return
-    let next = levelRef.current - 1
-    if (!ultra && next === 1) next = 0
+    const next = levelRef.current - 1
     if (next < 0) return
     applyLevel(next)
-  }, [ultra, applyLevel])
+  }, [applyLevel])
 
   // 切换质量预设时重置，给新预设一个干净的起点
   useEffect(() => {
@@ -129,11 +128,8 @@ export default function Depth3DPage({
     lastDownRef.current = 0
   }, [sceneSettings.quality, applyLevel])
 
-  const dofOn = ultra && level < 1
   const DPR_STEPS = [1, 0.8, 0.6, 0.45]
-  const dprScale = ultra
-    ? (level <= 1 ? 1 : DPR_STEPS[level - 1])
-    : DPR_STEPS[level]
+  const dprScale = DPR_STEPS[level]
 
   // 质量预设 -> 渲染倍率上限。星云着色器较重，4K 下 dpr 2 会把中端
   // GPU 压垮，因此 high 档从 2 降到 1.5（配合自适应仍可自动再降）。
@@ -245,17 +241,14 @@ export default function Depth3DPage({
         )}
 
         {/* 后期处理（按质量分级 + 帧预算自动降级）。
-            景深（DoF）是全屏后处理里最贵的一项，只在 ultra 档保留。
+            不上 DoF：全屏后处理里最贵的一项，且本场景 80% 的可见内容
+            是远处星星——焦外亮星会被 bokeh 晕成软灰斑。
             MSAA 固定关闭：后处理链（bloom 的 mipmap 模糊）本身就会
             平滑边缘，多重采样在 composer 之下几乎全是白付的显存与
-            resolve 开销。ultra 超预算时 FrameGovernor 关 DoF、再逐级
-            降分辨率。 */}
+            resolve 开销。超预算时 FrameGovernor 逐级降分辨率。 */}
         {sceneSettings.postProcessing && (
           <EffectComposer multisampling={0} enableNormalPass={false}>
             {[
-              ...(dofOn ? (
-                [<DepthOfField key="dof" focusDistance={0.012} focalLength={0.02} bokehScale={1.5} />]
-              ) : []),
               <Bloom
                 key="bloom"
                 intensity={sceneSettings.quality === 'low' ? 0.15 : sceneSettings.quality === 'mid' ? 0.18 : sceneSettings.quality === 'ultra' ? 0.22 : 0.2}

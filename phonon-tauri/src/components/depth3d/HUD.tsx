@@ -1339,7 +1339,7 @@ function SettingsTab({ settings, onChange, loadLevel }: { settings?: SceneSettin
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <SectionTitle>显示</SectionTitle>
       <ToggleRow
-        label="后处理效果（极致档含景深）"
+        label="后处理效果（Bloom / 暗角）"
         checked={settings?.postProcessing ?? true}
         onChange={(v) => onChange?.('postProcessing', v)}
       />
