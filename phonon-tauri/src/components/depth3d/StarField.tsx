@@ -19,9 +19,9 @@ function qualityScale(quality?: string) {
   }
 }
 
-// 远景星空 — 成千上万的小星星闪烁
+// 远景星空 — 银河底 + 亮星呼吸层 + 星流
+// （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
 export function StarField({ audioRef, quality }: Props) {
-  const starsRef = useRef<THREE.Points>(null)
   const twinkleRef = useRef<THREE.Points>(null)
   const galaxyRef = useRef<THREE.Mesh>(null)
   const hiSmRef = useRef(0)
@@ -136,80 +136,10 @@ export function StarField({ audioRef, quality }: Props) {
   useEffect(() => () => { galaxyTex.dispose() }, [galaxyTex])
 
   const qScale = qualityScale(quality)
-  // 750/150：用户多轮反馈后继续收敛——满天小星点太碎，碎点让位给
-  // 一条椭圆柱星流（见 streamGeo）
-  const STAR_COUNT = Math.floor(750 * qScale)
+  // 150：静态小星层已整层删除（用户反馈），天空的点状元素只留呼吸亮星
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
-  // 远景星星（常亮，微闪已按用户要求移除；phase 属性随之删除）
-  const starsGeo = useMemo(() => {
-    const geo = new THREE.BufferGeometry()
-    const positions = new Float32Array(STAR_COUNT * 3)
-    const sizes = new Float32Array(STAR_COUNT)
-
-    for (let i = 0; i < STAR_COUNT; i++) {
-      // 球形分布在远处
-      const r = 40 + Math.random() * 30
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
-      positions[i * 3 + 2] = r * Math.cos(phi)
-
-      sizes[i] = 0.45 + Math.random() * 0.55
-    }
-
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    return geo
-  }, [qScale])
-
   // 预设切换重建几何体时主动 dispose 旧的（与 NebulaCore 行为一致）
-  useEffect(() => () => { starsGeo.dispose() }, [starsGeo])
-
-  const starsMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uIntensity: { value: 0.8 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-    },
-    vertexShader: /* glsl */`
-      attribute float size;
-      uniform float uIntensity;
-      uniform float uPixelRatio;
-      varying float vAlpha;
-
-      void main() {
-        // 远景星层常亮：用户两轮反馈后彻底去掉闪烁（音乐响应保留在 uIntensity）
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        // 近距星钳制点径 + 近距淡出，防失焦灰斑。
-        // 远处亚像素星会因跨像素采样忽明忽暗（假闪烁）：设最小点径，
-        // 理想尺寸不足时按能量守恒比例调暗——稳定不闪的暗星
-        float depth = -mvPosition.z;
-        float ps = size * uPixelRatio * 1.5 / depth * 80.0;
-        float clamped = clamp(ps, 1.5, 5.0 * uPixelRatio);
-        gl_PointSize = clamped;
-        vAlpha = 0.85 * uIntensity * smoothstep(6.0, 20.0, depth) * min(ps / clamped, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: /* glsl */`
-      varying float vAlpha;
-      void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float d = length(uv);
-        if (d > 0.5) discard;
-        // 十字星芒感
-        float star = smoothstep(0.5, 0.0, d);
-        star = pow(star, 1.5);
-        gl_FragColor = vec4(0.95, 0.97, 1.0, star * vAlpha);
-      }
-    `,
-  }), [])
-
   // 较亮的闪烁星（随高频响应）
   const twinkleGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry()
@@ -407,14 +337,7 @@ export function StarField({ audioRef, quality }: Props) {
       m.uniforms.uTime.value = t
     }
 
-    // 缓慢整体旋转
-    if (starsRef.current) {
-      starsRef.current.rotation.y = t * 0.01
-      const mat = starsRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.6 + hi * 0.25
-      mat.uniforms.uPixelRatio.value = dpr
-    }
-
+    // 亮星呼吸层
     if (twinkleRef.current) {
       twinkleRef.current.rotation.y = -t * 0.015
       const mat = twinkleRef.current.material as THREE.ShaderMaterial
@@ -431,9 +354,6 @@ export function StarField({ audioRef, quality }: Props) {
         <sphereGeometry args={[95, 32, 16]} />
         <meshBasicMaterial map={galaxyTex} side={THREE.BackSide} depthWrite={false} fog={false} toneMapped={false} />
       </mesh>
-      <points ref={starsRef} geometry={starsGeo}>
-        <primitive object={starsMat} attach="material" />
-      </points>
       <points ref={twinkleRef} geometry={twinkleGeo}>
         <primitive object={twinkleMat} attach="material" />
       </points>
