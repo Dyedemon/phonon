@@ -135,9 +135,9 @@ export function StarField({ audioRef, quality }: Props) {
   useEffect(() => () => { galaxyTex.dispose() }, [galaxyTex])
 
   const qScale = qualityScale(quality)
-  // 1000/150：用户反馈最小星星太多；尺寸下限同步抬高（0.45 起），
-  // 最小的一档砍得最狠
-  const STAR_COUNT = Math.floor(1000 * qScale)
+  // 750/150：用户多轮反馈后继续收敛——满天小星点太碎，天空的主角
+  // 让给一条缓慢前进的彗星（见 cometGeo）
+  const STAR_COUNT = Math.floor(750 * qScale)
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
   // 远景星星（常亮，微闪已按用户要求移除；phase 属性随之删除）
@@ -294,6 +294,81 @@ export function StarField({ audioRef, quality }: Props) {
     `,
   }), [])
 
+  // ─── 彗星：一条缓慢匀速前进的天空主角（用户要求以单一代替满天小星） ───
+  // 亮核 + 渐隐尾迹（沿 -X 展开），整体沿 +X 匀速漂移，滑出后从另一侧循环。
+  // 高纬路径（y=20, z=-30），远离环系与行星
+  const cometRef = useRef<THREE.Points>(null)
+  const cometGeo = useMemo(() => {
+    const N = 90
+    const geo = new THREE.BufferGeometry()
+    const positions = new Float32Array(N * 3)
+    const sizes = new Float32Array(N)
+    const colors = new Float32Array(N * 3)
+    const alphas = new Float32Array(N)
+
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1) // 0 = 亮核，1 = 尾末端
+      const tailLen = 26
+      const spread = t * t * 1.6
+      positions[i * 3] = -t * tailLen - Math.random() * 0.4
+      positions[i * 3 + 1] = (Math.random() - 0.5) * spread
+      positions[i * 3 + 2] = (Math.random() - 0.5) * spread
+      sizes[i] = i === 0 ? 3.2 : 1.5 * (1 - t) + 0.25
+      // 核偏冷白，尾部偏蓝
+      const c = i === 0
+        ? [0.92, 0.96, 1.0]
+        : [0.62 - t * 0.15, 0.74 - t * 0.18, 1.0]
+      colors[i * 3] = c[0]
+      colors[i * 3 + 1] = c[1]
+      colors[i * 3 + 2] = c[2]
+      alphas[i] = i === 0 ? 1.0 : Math.pow(1 - t, 1.4) * 0.8
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1))
+    return geo
+  }, [])
+
+  useEffect(() => () => { cometGeo.dispose() }, [cometGeo])
+
+  const cometMat = useMemo(() => new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+    },
+    vertexShader: /* glsl */`
+      attribute float size;
+      attribute vec3 color;
+      attribute float alpha;
+      uniform float uPixelRatio;
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vColor = color;
+        vAlpha = alpha;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float ps = size * uPixelRatio * 90.0 / -mvPosition.z;
+        gl_PointSize = clamp(ps, 1.0, 16.0 * uPixelRatio);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float glow = smoothstep(0.5, 0.0, d);
+        gl_FragColor = vec4(vColor, pow(glow, 1.3) * vAlpha);
+      }
+    `,
+  }), [])
+
   useFrame(({ clock, viewport }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
@@ -307,6 +382,12 @@ export function StarField({ audioRef, quality }: Props) {
 
     // 银河底极慢漂移
     if (galaxyRef.current) galaxyRef.current.rotation.y = t * 0.003
+
+    // 彗星：匀速前进，滑出后循环
+    if (cometRef.current) {
+      cometRef.current.position.x += delta * 0.55
+      if (cometRef.current.position.x > 65) cometRef.current.position.x = -65
+    }
 
     // 缓慢整体旋转
     if (starsRef.current) {
@@ -337,6 +418,10 @@ export function StarField({ audioRef, quality }: Props) {
       </points>
       <points ref={twinkleRef} geometry={twinkleGeo}>
         <primitive object={twinkleMat} attach="material" />
+      </points>
+      {/* 彗星（高纬天空，一条固定方向的前进元素） */}
+      <points ref={cometRef} geometry={cometGeo} position={[-60, 20, -30]}>
+        <primitive object={cometMat} attach="material" />
       </points>
     </group>
   )
