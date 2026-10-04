@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
@@ -13,11 +13,11 @@ const PLANET_RADIUS = 4.5
 
 function qualityPreset(quality?: string) {
   switch (quality) {
-    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  asteroidN: 300, ringSeg: 128 }
-    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  asteroidN: 500, ringSeg: 200 }
-    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  asteroidN: 1200, ringSeg: 480 }
+    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  ringSeg: 128 }
+    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  ringSeg: 200 }
+    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  ringSeg: 480 }
     case 'high':
-    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  asteroidN: 800, ringSeg: 320 }
+    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  ringSeg: 320 }
   }
 }
 
@@ -72,7 +72,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const moonRef = useRef<THREE.Mesh>(null)
   const moon2Ref = useRef<THREE.Mesh>(null)
   const planetRingRef = useRef<THREE.Mesh>(null)
-  const asteroidRef = useRef<THREE.Points>(null)
 
   const q = qualityPreset(quality)
 
@@ -460,110 +459,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 小行星带 ───
-  const asteroidGeo = useMemo(() => {
-    const geo = new THREE.BufferGeometry()
-    const count = q.asteroidN
-    const positions = new Float32Array(count * 3)
-    const sizes = new Float32Array(count)
-    const colors = new Float32Array(count * 3)
-    const speeds = new Float32Array(count)
-    const radii = new Float32Array(count)
-    const angles = new Float32Array(count)
-    const rotations = new Float32Array(count)
-
-    for (let i = 0; i < count; i++) {
-      // 小行星带在最外圈（17~21.5），与环带外缘之间留出空隙
-      const r = 17.0 + Math.pow(Math.random(), 0.7) * 4.5
-      const angle = Math.random() * Math.PI * 2
-      const heightScale = 0.2 + Math.random() * 0.35
-
-      positions[i * 3] = Math.cos(angle) * r
-      positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale
-      positions[i * 3 + 2] = Math.sin(angle) * r
-
-      sizes[i] = 0.03 + Math.random() * 0.08
-      speeds[i] = 0.03 + Math.random() * 0.1
-      radii[i] = r
-      angles[i] = angle
-      rotations[i] = Math.random() * Math.PI * 2
-
-      // 岩石色
-      const shade = 0.3 + Math.random() * 0.4
-      const col = new THREE.Color().setHSL(0.08 + Math.random() * 0.05, 0.2, shade)
-      colors[i * 3] = col.r
-      colors[i * 3 + 1] = col.g
-      colors[i * 3 + 2] = col.b
-    }
-
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1))
-    geo.setAttribute('radius', new THREE.BufferAttribute(radii, 1))
-    geo.setAttribute('angle', new THREE.BufferAttribute(angles, 1))
-    geo.setAttribute('rotation', new THREE.BufferAttribute(rotations, 1))
-    return geo
-  }, [q.asteroidN])
-
-  const asteroidMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: false,
-    uniforms: {
-      uTime: { value: 0 },
-      uSpeed: { value: 1 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
-    },
-    vertexShader: /* glsl */`
-      attribute float size;
-      attribute vec3 color;
-      attribute float speed;
-      attribute float radius;
-      attribute float angle;
-      attribute float rotation;
-      uniform float uTime;
-      uniform float uSpeed;
-      uniform float uPixelRatio;
-      uniform vec3 uLightDir;
-      varying vec3 vColor;
-      varying float vLit;
-
-      void main() {
-        vColor = color;
-        // 随音乐能量加速旋转（低频/响度）。系数 3.5：0.06 时角速度只有
-        // 0.0004~0.002 rad/s（一圈 30+ 分钟），肉眼等于静止——这是
-        // "小行星带没效果"的根因；现在闲时 ~90s 一圈，重低音 ~40s
-        float angSpeed = speed / sqrt(radius) * 3.5 * uSpeed;
-        float currentAngle = angle + uTime * angSpeed;
-        float tilt = sin(uTime * speed * 0.8 + rotation) * 0.1;
-        vec3 pos = vec3(
-          cos(currentAngle) * radius,
-          position.y + tilt,
-          sin(currentAngle) * radius
-        );
-        // 简易光照
-        vec3 normal = normalize(pos);
-        vLit = 0.2 + 0.8 * max(0.0, dot(normal, uLightDir));
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = size * 30.0 * uPixelRatio / -mvPosition.z;
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: /* glsl */`
-      varying vec3 vColor;
-      varying float vLit;
-      void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float d = length(uv);
-        if (d > 0.5) discard;
-        // 简单的球形明暗
-        float sphere = 1.0 - d * 1.5;
-        sphere = max(0.1, sphere);
-        gl_FragColor = vec4(vColor * vLit * sphere, 1.0);
-      }
-    `,
-  }), [])
-
   // ─── 卫星 1（主卫星，岩石质地，陨石坑） ───
   const moonMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
@@ -679,12 +574,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // 质量预设切换会重建几何体：主动 dispose 旧的，避免 GPU 缓冲滞留
-  useEffect(() => () => {
-    asteroidGeo.dispose()
-  }, [asteroidGeo])
-
-  useFrame(({ clock, viewport }, delta) => {
+  useFrame(({ clock }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
     // 记录启动时间
@@ -694,10 +584,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // （delta 驱动，帧率变化不影响时长）
     initFadeRef.current = Math.min(1, initFadeRef.current + delta * 0.9)
     const fade = initFadeRef.current
-
-    // 粒子尺寸跟随画布实际 dpr：governor 降档（画布 dpr 变小）时
-    // gl_PointSize 若仍按设备 dpr 计，所有点会突然放大 25%
-    const dpr = viewport.dpr || 1
 
     lowSmRef.current = lerp(lowSmRef.current, d.lowFreqAvg * fade, 0.08)
     rmsSmRef.current = lerp(rmsSmRef.current, d.rms * fade, 0.06)
@@ -766,16 +652,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uWave.value = ringWaveRef.current
     }
 
-    // 小行星带：与环系共面（0.12/0.03），播放时随能量加速旋转
-    if (asteroidRef.current) {
-      asteroidRef.current.rotation.x = 0.12
-      asteroidRef.current.rotation.z = 0.03
-      const mat = asteroidRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uTime.value = t
-      mat.uniforms.uSpeed.value = 1 + low * 1.5 + rms * 0.8
-      mat.uniforms.uPixelRatio.value = dpr
-    }
-
     // 卫星1：绕行星公转（轨道 12.5 > 环外缘 11.7，避免每圈穿环）
     if (moonRef.current) {
       const moonDist = 12.5
@@ -807,11 +683,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
   return (
     <group ref={groupRef} position={[0, -0.5, 0]}>
-      {/* 小行星带 */}
-      <points ref={asteroidRef} geometry={asteroidGeo}>
-        <primitive object={asteroidMat} attach="material" />
-      </points>
-
       {/* 行星 */}
       <mesh ref={planetRef}>
         <sphereGeometry args={[PLANET_RADIUS, q.planetSeg, q.planetSeg]} />

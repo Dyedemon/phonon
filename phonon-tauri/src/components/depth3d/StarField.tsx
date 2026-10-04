@@ -48,6 +48,11 @@ export function StarField({ audioRef, quality }: Props) {
     const base = [5, 7, 24]
     const tintA = [108, 128, 255]
     const tintB = [172, 134, 255]
+    // 离散远星系涂斑：只留两枚，放在银河带附近（用户要求）
+    const smudges = [
+      { cx: 0.42, cy: 0.5, rx: 0.03, ry: 0.013, rot: 0.4, c: [150, 160, 255], a: 0.22 },
+      { cx: 0.6, cy: 0.4, rx: 0.024, ry: 0.011, rot: -0.35, c: [190, 170, 230], a: 0.2 },
+    ]
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
         const u = x / cw
@@ -66,10 +71,28 @@ export function StarField({ audioRef, quality }: Props) {
         const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
         a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
         a = Math.max(0, Math.min(1, a))
+        // 涂斑与云带取最大值合成（避免叠亮）
+        let sr = 0, sg = 0, sb = 0, sa = 0
+        for (const s of smudges) {
+          const dxs = x - s.cx * cw
+          const dys = y - s.cy * ch
+          const cosr = Math.cos(s.rot)
+          const sinr = Math.sin(s.rot)
+          const ex = (dxs * cosr + dys * sinr) / (s.rx * cw)
+          const ey = (-dxs * sinr + dys * cosr) / (s.ry * ch)
+          const g = Math.exp(-(ex * ex + ey * ey)) * s.a
+          if (g > sa) { sr = s.c[0]; sg = s.c[1]; sb = s.c[2]; sa = g }
+        }
         const o = (y * cw + x) * 4
-        px[o] = base[0] + (tintA[0] + (tintB[0] - tintA[0]) * n3 - base[0]) * a
-        px[o + 1] = base[1] + (tintA[1] + (tintB[1] - tintA[1]) * n3 - base[1]) * a
-        px[o + 2] = base[2] + (tintA[2] + (tintB[2] - tintA[2]) * n3 - base[2]) * a
+        if (sa > a) {
+          px[o] = base[0] + (sr - base[0]) * sa
+          px[o + 1] = base[1] + (sg - base[1]) * sa
+          px[o + 2] = base[2] + (sb - base[2]) * sa
+        } else {
+          px[o] = base[0] + (tintA[0] + (tintB[0] - tintA[0]) * n3 - base[0]) * a
+          px[o + 1] = base[1] + (tintA[1] + (tintB[1] - tintA[1]) * n3 - base[1]) * a
+          px[o + 2] = base[2] + (tintA[2] + (tintB[2] - tintA[2]) * n3 - base[2]) * a
+        }
         px[o + 3] = 255
       }
     }
@@ -275,12 +298,12 @@ export function StarField({ audioRef, quality }: Props) {
   // 两端淡入淡出（近端浮现、远端没入），不环绕不消失
   const streamRef = useRef<THREE.Points>(null)
   const streamGeo = useMemo(() => {
-    const N = 220
-    const dir = new THREE.Vector3(0, 0.35, -0.94).normalize()
+    const N = 400
+    const dir = new THREE.Vector3(0, 0.3, -0.95).normalize()
     const e1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
     const e2 = new THREE.Vector3().crossVectors(dir, e1).normalize()
-    const origin = new THREE.Vector3(0, 14, -22)
-    const len = 42
+    const origin = new THREE.Vector3(0, 12, -20)
+    const len = 70
 
     const geo = new THREE.BufferGeometry()
     const aT = new Float32Array(N)
@@ -293,8 +316,8 @@ export function StarField({ audioRef, quality }: Props) {
       aT[i] = Math.random()
       const th = Math.random() * Math.PI * 2
       const rr = Math.sqrt(Math.random()) // 椭圆截面内均匀分布
-      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 1.6)
-        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 0.8))
+      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 2.8)
+        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 1.4))
       aOffset[i * 3] = off.x
       aOffset[i * 3 + 1] = off.y
       aOffset[i * 3 + 2] = off.z
@@ -302,7 +325,7 @@ export function StarField({ audioRef, quality }: Props) {
       positions[i * 3] = base.x
       positions[i * 3 + 1] = base.y
       positions[i * 3 + 2] = base.z
-      sizes[i] = 0.4 + Math.random() * 0.6
+      sizes[i] = 0.5 + Math.random() * 0.7
       alphas[i] = 0.18 + Math.random() * 0.32
     }
 
@@ -323,9 +346,9 @@ export function StarField({ audioRef, quality }: Props) {
     uniforms: {
       uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uOrigin: { value: new THREE.Vector3(0, 14, -22) },
-      uDir: { value: new THREE.Vector3(0, 0.35, -0.94).normalize() },
-      uLen: { value: 42 },
+      uOrigin: { value: new THREE.Vector3(0, 12, -20) },
+      uDir: { value: new THREE.Vector3(0, 0.3, -0.95).normalize() },
+      uLen: { value: 70 },
     },
     vertexShader: /* glsl */`
       attribute float aT;
@@ -339,8 +362,8 @@ export function StarField({ audioRef, quality }: Props) {
       uniform float uLen;
       varying float vAlpha;
       void main() {
-        // 沿轴流动：相位循环，粒子从近端流向远端
-        float t = fract(aT + uTime * 0.045);
+        // 沿轴流动：相位循环，粒子从近端流向远端（路径加长后放慢流速）
+        float t = fract(aT + uTime * 0.03);
         vec3 pos = uOrigin + uDir * (t * uLen) + aOffset;
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         float ps = size * uPixelRatio * 60.0 / -mvPosition.z;
