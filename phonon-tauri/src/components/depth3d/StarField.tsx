@@ -28,9 +28,10 @@ export function StarField({ audioRef, quality }: Props) {
   const initFadeRef = useRef(0)
 
   // ─── 银河底：一次性 CPU 烘焙到 CanvasTexture（零每帧采样成本之外的开销） ───
-  // 云雾必须逐像素写 ImageData：canvas 渐变会被 Chromium 抖动渲染，
-  // 低 alpha 大面积叠加 + 放大会量化出网状纹理（两轮用户反馈"网状的糊"）。
-  // 噪声全部用整数周期正弦，水平方向天然无缝
+  // 设计原则（用户反馈）：深空要"空"，宇宙元素是点缀而不是包裹——
+  // 银河带只覆盖部分方位角（两端高斯收尾，不环绕整圈），另点几枚离散的
+  // 远星系涂斑。逐像素写 ImageData（canvas 渐变会被 Chromium 抖动渲染，
+  // 量化出网状纹理）；噪声全部整数周期正弦，水平方向天然无缝
   const galaxyTex = useMemo(() => {
     const w = 2048
     const h = 1024
@@ -45,26 +46,54 @@ export function StarField({ audioRef, quality }: Props) {
     const px = img.data
     const base = [5, 7, 24]
     const tintA = [108, 128, 255]
-    const tintB = [168, 132, 255]
+    const tintB = [172, 134, 255]
+    // 离散远星系涂斑（小画布坐标，椭圆高斯，各自色调/倾角）
+    const smudges = [
+      { cx: 0.16, cy: 0.28, rx: 0.05, ry: 0.018, rot: 0.5, c: [150, 160, 255], a: 0.3 },
+      { cx: 0.62, cy: 0.24, rx: 0.028, ry: 0.012, rot: -0.4, c: [190, 170, 230], a: 0.24 },
+      { cx: 0.86, cy: 0.62, rx: 0.06, ry: 0.02, rot: 0.2, c: [120, 150, 235], a: 0.2 },
+      { cx: 0.4, cy: 0.78, rx: 0.035, ry: 0.014, rot: -0.7, c: [160, 150, 240], a: 0.22 },
+    ]
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
         const u = x / cw
-        const by = ch * 0.5 + Math.sin(u * Math.PI * 2 * 1.5) * ch * 0.1
-        const dy = (y - by) / (ch * 0.13)
-        const band = Math.exp(-dy * dy)
+        // 方位角环形距离：带中心在 u=0.5，可见范围 ~半个天空，两端收尾
+        const az = Math.abs(((((u - 0.5) % 1) + 1.5) % 1) - 0.5)
+        const azEnv = Math.exp(-(az * az) / (0.13 * 0.13))
+        const by = ch * 0.42 + Math.sin(u * Math.PI * 2) * ch * 0.07
+        const dy = (y - by) / (ch * 0.07)
+        let a = Math.exp(-dy * dy) * azEnv
         // 平滑伪噪声：整数周期正弦叠加（水平无缝）
         const n1 = Math.sin(u * Math.PI * 2 * 3 + y * 0.11) * 0.5 + 0.5
         const n2 = Math.sin(u * Math.PI * 2 * 7 + y * 0.23 + 1.7) * 0.5 + 0.5
         const n3 = Math.sin(u * Math.PI * 2 * 13 + y * 0.05 + 4.2) * 0.5 + 0.5
-        let a = band * (0.4 + 0.4 * n1 * n2 + 0.2 * n3)
-        // 尘埃暗纹
-        const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.05) / (ch * 0.045)
-        a -= Math.exp(-dLane * dLane) * 0.45 * band
+        a *= (0.45 + 0.4 * n1 * n2 + 0.15 * n3) * 0.8
+        // 尘埃暗纹（只落在带内）
+        const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
+        a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
         a = Math.max(0, Math.min(1, a))
+        // 离散星系涂斑（不受方位角包络限制，与云带取最大值避免叠亮）
+        let sr = 0, sg = 0, sb = 0, sa = 0
+        for (const s of smudges) {
+          const dxs = x - s.cx * cw
+          const dys = y - s.cy * ch
+          const cosr = Math.cos(s.rot)
+          const sinr = Math.sin(s.rot)
+          const ex = (dxs * cosr + dys * sinr) / (s.rx * cw)
+          const ey = (-dxs * sinr + dys * cosr) / (s.ry * ch)
+          const g = Math.exp(-(ex * ex + ey * ey)) * s.a
+          if (g > sa) { sr = s.c[0]; sg = s.c[1]; sb = s.c[2]; sa = g }
+        }
         const o = (y * cw + x) * 4
-        px[o] = base[0] + (tintA[0] + (tintB[0] - tintA[0]) * n3 - base[0]) * a
-        px[o + 1] = base[1] + (tintA[1] + (tintB[1] - tintA[1]) * n3 - base[1]) * a
-        px[o + 2] = base[2] + (tintA[2] + (tintB[2] - tintA[2]) * n3 - base[2]) * a
+        if (sa > a) {
+          px[o] = base[0] + (sr - base[0]) * sa
+          px[o + 1] = base[1] + (sg - base[1]) * sa
+          px[o + 2] = base[2] + (sb - base[2]) * sa
+        } else {
+          px[o] = base[0] + (tintA[0] + (tintB[0] - tintA[0]) * n3 - base[0]) * a
+          px[o + 1] = base[1] + (tintA[1] + (tintB[1] - tintA[1]) * n3 - base[1]) * a
+          px[o + 2] = base[2] + (tintA[2] + (tintB[2] - tintA[2]) * n3 - base[2]) * a
+        }
         px[o + 3] = 255
       }
     }
@@ -79,12 +108,13 @@ export function StarField({ audioRef, quality }: Props) {
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(cloud, 0, 0, w, h)
 
-    // 暗星：六成集中在带附近（按全分辨率尺度重算带位置）
-    const bandYFull = (x: number) => h * 0.5 + Math.sin((x / w) * Math.PI * 2 * 1.5) * h * 0.1
+    // 暗星：六成集中在带附近（按全分辨率尺度重算带位置；散布全天的
+    // 孤星不受方位角包络限制——点状星不构成"包裹感"）
+    const bandYFull = (x: number) => h * 0.42 + Math.sin((x / w) * Math.PI * 2) * h * 0.07
     for (let i = 0; i < 2600; i++) {
       const near = Math.random() < 0.6
       const x = Math.random() * w
-      const y = near ? bandYFull(x) + (Math.random() - 0.5) * h * 0.22 : Math.random() * h
+      const y = near ? bandYFull(x) + (Math.random() - 0.5) * h * 0.2 : Math.random() * h
       ctx.fillStyle = 'rgba(210,220,255,' + (0.12 + Math.random() * 0.35) + ')'
       const s = Math.random() < 0.85 ? 1 : 2
       for (const dx of [-w, 0, w]) ctx.fillRect(x + dx, y, s, s)
