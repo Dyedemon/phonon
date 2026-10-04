@@ -21,10 +21,10 @@ function qualityScale(quality?: string) {
 
 // 远景星空 — 银河底 + 亮星呼吸层 + 星流
 // （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
-// 星流端点：横跨高纬天空的一条长弧，两端都在视野内（用户要求
-// "从一个尽头指向另一个尽头"）
-const STREAM_A = new THREE.Vector3(-40, 18, -20)
-const STREAM_B = new THREE.Vector3(40, 30, -60)
+// 星流端点：起点在默认机位画面左缘外（"镜头尽头"），随流身延伸入视野深处
+// （用户要求：起点改到镜头尽头，整体加大加长）
+const STREAM_A = new THREE.Vector3(-32, 3, 2)
+const STREAM_B = new THREE.Vector3(25, 34, -75)
 const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
 const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
 
@@ -220,7 +220,7 @@ export function StarField({ audioRef, quality }: Props) {
   // 两端淡入淡出（近端浮现、远端没入），不环绕不消失
   const streamRef = useRef<THREE.Points>(null)
   const streamGeo = useMemo(() => {
-    const N = 400
+    const N = 550
     const dir = STREAM_DIR
     const e1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
     const e2 = new THREE.Vector3().crossVectors(dir, e1).normalize()
@@ -238,8 +238,8 @@ export function StarField({ audioRef, quality }: Props) {
       aT[i] = Math.random()
       const th = Math.random() * Math.PI * 2
       const rr = Math.sqrt(Math.random()) // 椭圆截面内均匀分布
-      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 4.0)
-        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 2.0))
+      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 6.0)
+        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 3.0))
       aOffset[i * 3] = off.x
       aOffset[i * 3 + 1] = off.y
       aOffset[i * 3 + 2] = off.z
@@ -247,7 +247,7 @@ export function StarField({ audioRef, quality }: Props) {
       positions[i * 3] = base.x
       positions[i * 3 + 1] = base.y
       positions[i * 3 + 2] = base.z
-      sizes[i] = 0.6 + Math.random() * 0.8
+      sizes[i] = 0.7 + Math.random() * 0.9
       alphas[i] = 0.18 + Math.random() * 0.32
     }
 
