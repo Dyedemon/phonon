@@ -243,11 +243,11 @@ export default function Depth3DPage({
         {/* 后期处理（按质量分级 + 帧预算自动降级）。
             不上 DoF：全屏后处理里最贵的一项，且本场景 80% 的可见内容
             是远处星星——焦外亮星会被 bokeh 晕成软灰斑。
-            MSAA 固定关闭：后处理链（bloom 的 mipmap 模糊）本身就会
-            平滑边缘，多重采样在 composer 之下几乎全是白付的显存与
-            resolve 开销。超预算时 FrameGovernor 逐级降分辨率。 */}
+            MSAA 回归 ×4：DoF 删除后场景负载大减，预算买得起，
+            环带/行星轮廓的锯齿是最影响观感的画质项。超预算时
+            FrameGovernor 逐级降分辨率。 */}
         {sceneSettings.postProcessing && (
-          <EffectComposer multisampling={0} enableNormalPass={false}>
+          <EffectComposer multisampling={4} enableNormalPass={false}>
             {[
               <Bloom
                 key="bloom"

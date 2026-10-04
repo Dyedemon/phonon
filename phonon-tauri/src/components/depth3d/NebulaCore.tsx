@@ -127,8 +127,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
         // 八度数经过性能预算削减：原始版本每像素 33+ 次 fbm，
         // 在 4K/dpr2 下帧时间超出 WebView2 合成容忍度 → 间歇输出
         // 纯黑帧（整窗闪屏）。削减八度后观感差异很小，帧率恢复正常。
+        // （DoF 删除后预算宽松，山脉/城市各恢复一档 octave）
         float continents = fbm(p * 1.2, 4) * 0.9;
-        float mountains = ridge(p * 3.0, 3) * 0.5;
+        float mountains = ridge(p * 3.0, 4) * 0.5;
         float hills = fbm(p * 6.0, 3) * 0.25;
         float microDetail = fbm(p * 18.0, 2) * 0.08;
         // 注意：GLSL 不允许在初始化表达式中引用正在声明的变量。
@@ -215,7 +216,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vec3 volcanoGlow = vec3(1.0, 0.35, 0.08) * volcanoes * (1.0 - lit) * 0.4;
 
         // ── 夜面城市光 ──
-        float cityN = fbm(p * 22.0, 3);
+        float cityN = fbm(p * 22.0, 4);
         float cities = smoothstep(0.68, 0.74, cityN) * (1.0 - halfLit);
         cities *= smoothstep(0.48, 0.58, height);
         // 大城市中心更亮

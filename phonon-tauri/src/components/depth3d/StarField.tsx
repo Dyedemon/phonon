@@ -48,10 +48,10 @@ export function StarField({ audioRef, quality }: Props) {
     const tintA = [108, 128, 255]
     const tintB = [172, 134, 255]
     // 离散远星系涂斑（小画布坐标，椭圆高斯，各自色调/倾角）
+    // （原本右上角还有一枚最大的——用户要求去掉）
     const smudges = [
       { cx: 0.16, cy: 0.28, rx: 0.05, ry: 0.018, rot: 0.5, c: [150, 160, 255], a: 0.3 },
       { cx: 0.62, cy: 0.24, rx: 0.028, ry: 0.012, rot: -0.4, c: [190, 170, 230], a: 0.24 },
-      { cx: 0.86, cy: 0.62, rx: 0.06, ry: 0.02, rot: 0.2, c: [120, 150, 235], a: 0.2 },
       { cx: 0.4, cy: 0.78, rx: 0.035, ry: 0.014, rot: -0.7, c: [160, 150, 240], a: 0.22 },
     ]
     for (let y = 0; y < ch; y++) {
@@ -128,6 +128,7 @@ export function StarField({ audioRef, quality }: Props) {
 
     const tex = new THREE.CanvasTexture(canvas)
     tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = 8
     return tex
   }, [])
 
