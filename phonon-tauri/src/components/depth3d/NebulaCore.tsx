@@ -444,9 +444,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float profile = 1.0 - t * 0.35;
 
         // 节拍波：beat 触发（JS 置 uWave=0），亮环从内缘向外缘传播 ~1.2s，
-        // 走完时平滑熄灭——打击感带方向，而不是整体一闪
+        // 走完时平滑熄灭——打击感带方向，而不是整体一闪。
+        // 注意必须用 dw*dw 而不是 pow(dw, 2.0)：GLSL 的 pow 底数为负时
+        // 是未定义行为（部分驱动返回 NaN，波外侧整片花掉）
         float waveR = mix(0.763, 1.0, uWave);
-        float wave = exp(-pow((r - waveR) * 22.0, 2.0)) * (1.0 - smoothstep(0.85, 1.0, uWave));
+        float dw = (r - waveR) * 22.0;
+        float wave = exp(-dw * dw) * (1.0 - smoothstep(0.85, 1.0, uWave));
 
         float alpha = band * tex * profile * ringLight * (0.35 + uLow * 0.3 + uPulse * 0.25)
           + band * wave * 0.45;

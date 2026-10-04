@@ -94,12 +94,11 @@ export function StarField({ audioRef, quality }: Props) {
   const STAR_COUNT = Math.floor(1000 * qScale)
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
-  // 远景星星（固定，微闪）
+  // 远景星星（常亮，微闪已按用户要求移除；phase 属性随之删除）
   const starsGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry()
     const positions = new Float32Array(STAR_COUNT * 3)
     const sizes = new Float32Array(STAR_COUNT)
-    const phases = new Float32Array(STAR_COUNT)
 
     for (let i = 0; i < STAR_COUNT; i++) {
       // 球形分布在远处
@@ -111,12 +110,10 @@ export function StarField({ audioRef, quality }: Props) {
       positions[i * 3 + 2] = r * Math.cos(phi)
 
       sizes[i] = 0.45 + Math.random() * 0.55
-      phases[i] = Math.random() * Math.PI * 2
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1))
     return geo
   }, [qScale])
 
@@ -134,8 +131,6 @@ export function StarField({ audioRef, quality }: Props) {
     },
     vertexShader: /* glsl */`
       attribute float size;
-      attribute float phase;
-      uniform float uTime;
       uniform float uIntensity;
       uniform float uPixelRatio;
       varying float vAlpha;
@@ -271,7 +266,6 @@ export function StarField({ audioRef, quality }: Props) {
     if (starsRef.current) {
       starsRef.current.rotation.y = t * 0.01
       const mat = starsRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.6 + hi * 0.25
       mat.uniforms.uPixelRatio.value = dpr
     }
