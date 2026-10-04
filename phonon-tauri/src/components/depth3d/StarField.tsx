@@ -21,9 +21,15 @@ function qualityScale(quality?: string) {
 
 // 远景星空 — 银河底 + 亮星呼吸层 + 星流
 // （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
+// 星流端点：横跨高纬天空的一条长弧，两端都在视野内（用户要求
+// "从一个尽头指向另一个尽头"）
+const STREAM_A = new THREE.Vector3(-40, 18, -20)
+const STREAM_B = new THREE.Vector3(40, 30, -60)
+const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
+const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
+
 export function StarField({ audioRef, quality }: Props) {
   const twinkleRef = useRef<THREE.Points>(null)
-  const galaxyRef = useRef<THREE.Mesh>(null)
   const hiSmRef = useRef(0)
   const initFadeRef = useRef(0)
 
@@ -215,11 +221,11 @@ export function StarField({ audioRef, quality }: Props) {
   const streamRef = useRef<THREE.Points>(null)
   const streamGeo = useMemo(() => {
     const N = 400
-    const dir = new THREE.Vector3(0, 0.3, -0.95).normalize()
+    const dir = STREAM_DIR
     const e1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
     const e2 = new THREE.Vector3().crossVectors(dir, e1).normalize()
-    const origin = new THREE.Vector3(0, 12, -20)
-    const len = 70
+    const origin = STREAM_A
+    const len = STREAM_LEN
 
     const geo = new THREE.BufferGeometry()
     const aT = new Float32Array(N)
@@ -232,8 +238,8 @@ export function StarField({ audioRef, quality }: Props) {
       aT[i] = Math.random()
       const th = Math.random() * Math.PI * 2
       const rr = Math.sqrt(Math.random()) // 椭圆截面内均匀分布
-      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 2.8)
-        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 1.4))
+      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 4.0)
+        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 2.0))
       aOffset[i * 3] = off.x
       aOffset[i * 3 + 1] = off.y
       aOffset[i * 3 + 2] = off.z
@@ -241,7 +247,7 @@ export function StarField({ audioRef, quality }: Props) {
       positions[i * 3] = base.x
       positions[i * 3 + 1] = base.y
       positions[i * 3 + 2] = base.z
-      sizes[i] = 0.5 + Math.random() * 0.7
+      sizes[i] = 0.6 + Math.random() * 0.8
       alphas[i] = 0.18 + Math.random() * 0.32
     }
 
@@ -262,9 +268,9 @@ export function StarField({ audioRef, quality }: Props) {
     uniforms: {
       uTime: { value: 0 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uOrigin: { value: new THREE.Vector3(0, 12, -20) },
-      uDir: { value: new THREE.Vector3(0, 0.3, -0.95).normalize() },
-      uLen: { value: 70 },
+      uOrigin: { value: STREAM_A },
+      uDir: { value: STREAM_DIR },
+      uLen: { value: STREAM_LEN },
     },
     vertexShader: /* glsl */`
       attribute float aT;
@@ -312,9 +318,6 @@ export function StarField({ audioRef, quality }: Props) {
     // 粒子尺寸跟随画布实际 dpr（governor 降档时不突变）
     const dpr = viewport.dpr || 1
 
-    // 银河底极慢漂移
-    if (galaxyRef.current) galaxyRef.current.rotation.y = t * 0.003
-
     // 星流：粒子沿轴流向深处
     if (streamRef.current) {
       const m = streamRef.current.material as THREE.ShaderMaterial
@@ -333,8 +336,9 @@ export function StarField({ audioRef, quality }: Props) {
 
   return (
     <group>
-      {/* 银河底：远球内侧一次烘焙贴图。fog 必须关——场景雾 far=65，95 距离会被整个吞掉 */}
-      <mesh ref={galaxyRef}>
+      {/* 银河底：远球内侧一次烘焙贴图，完全静止（用户要求不移动旋转）。
+          fog 必须关——场景雾 far=65，95 距离会被整个吞掉 */}
+      <mesh>
         <sphereGeometry args={[95, 32, 16]} />
         <meshBasicMaterial map={galaxyTex} side={THREE.BackSide} depthWrite={false} fog={false} toneMapped={false} />
       </mesh>
