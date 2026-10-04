@@ -472,22 +472,22 @@ export function NebulaCore({ audioRef, quality }: Props) {
     const angles = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      // 半径分层：环带 mesh 到 8.55 为止，星云粒子占 14.8~20——
+      // 半径分层：环带 mesh 到 8.55 为止，星云粒子占 17~22.5——
       // 与环带保持明显空隙（用户要求离球再远一点）
-      const r = 14.8 + Math.pow(Math.random(), 0.6) * 5.2
+      const r = 17 + Math.pow(Math.random(), 0.6) * 5.5
       const angle = Math.random() * Math.PI * 2
-      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 14.8) * 0.06)
+      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 17) * 0.06)
 
       positions[i * 3] = Math.cos(angle) * r
       positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale
       positions[i * 3 + 2] = Math.sin(angle) * r
 
-      sizes[i] = 0.08 + Math.random() * 0.22
+      sizes[i] = 0.12 + Math.random() * 0.26
       speeds[i] = 0.06 + Math.random() * 0.22
       radii[i] = r
       angles[i] = angle
 
-      const hue = 0.82 - (r - 14.8) / 5.2 * 0.25
+      const hue = 0.82 - (r - 17) / 5.5 * 0.25
       const col = new THREE.Color().setHSL(hue, 0.65, 0.62)
       colors[i * 3] = col.r
       colors[i * 3 + 1] = col.g
@@ -542,8 +542,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
           sin(currentAngle) * radius
         );
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = size * uIntensity * 80.0 * uPixelRatio / -mvPosition.z;
-        vAlpha = uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35;
+        // 亚像素粒子是发糊的根因：最小点径 + 能量守恒调暗（与星层同方案）
+        float ps = size * uIntensity * 170.0 * uPixelRatio / -mvPosition.z;
+        float clamped = clamp(ps, 1.5, 10.0 * uPixelRatio);
+        gl_PointSize = clamped;
+        vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
