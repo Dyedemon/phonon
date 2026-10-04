@@ -7,7 +7,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import { useAudioDataRef, lerp } from './depth3d/audioBridge'
+import { useAudioDataRef } from './depth3d/audioBridge'
 import type { SmoothedAudioData } from './depth3d/audioBridge'
 import { NebulaCore } from './depth3d/NebulaCore'
 import { StarField } from './depth3d/StarField'
@@ -379,7 +379,6 @@ function CameraRig({ audioRef, theme }: {
   const isRhythm = theme === 'rhythm'
   const prevThemeRef = useRef(theme)
   const targetBaseRef = useRef(new THREE.Vector3(0, isRhythm ? 0.2 : -0.5, isRhythm ? 0 : 0))
-  const targetShakeRef = useRef(new THREE.Vector3())
   // 节拍推拉方向向量：useFrame 每帧跑，复用同一个实例避免 60fps 的 GC 压力
   const beatDirRef = useRef(new THREE.Vector3())
   const beatShakeRef = useRef(0)
@@ -406,7 +405,7 @@ function CameraRig({ audioRef, theme }: {
     }
   }, [theme, camera, controls])
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const d = audioRef.current
 
     // beat 检测（用于节奏模式轻微抖动）
@@ -414,32 +413,18 @@ function CameraRig({ audioRef, theme }: {
     beatShakeRef.current *= 0.85
     lastBeatRef.current = d.beat
 
-    if (isRhythm) {
-      // 节奏模式：OrbitControls 负责控制相机，这里只做极轻量的 beat 推拉
-      // 不覆盖 target，避免用户无法拖动
-      if (controls) {
-        const c = controls as any
-        const beatPush = beatShakeRef.current * 0.08
-        // 只对相机位置做极微小的 beat 推拉（不影响 target，用户可自由拖动）
-        if (camera && c.target) {
-          beatDirRef.current.subVectors(camera.position, c.target).normalize()
-          camera.position.addScaledVector(beatDirRef.current, -beatPush * 0.15)
-        }
-      }
-    } else {
-      // 星云模式：正常幅度的浮动，覆盖 target
-      targetShakeRef.current.x = lerp(targetShakeRef.current.x, 0, 0.08)
-      targetShakeRef.current.y = lerp(targetShakeRef.current.y, Math.sin(clock.elapsedTime * 0.25) * 0.05 - d.lowFreqAvg * 0.04, 0.08)
-      targetShakeRef.current.z = lerp(targetShakeRef.current.z, -d.lowFreqAvg * 0.1, 0.08)
-
-      if (controls) {
-        const c = controls as any
-        if (c.target) {
-          c.target.copy(targetBaseRef.current).add(targetShakeRef.current)
-          if (typeof c.update === 'function') c.update()
-        }
+    if (isRhythm && controls) {
+      const c = controls as any
+      const beatPush = beatShakeRef.current * 0.08
+      // 只对相机位置做极微小的 beat 推拉（不影响 target，用户可自由拖动）
+      if (camera && c.target) {
+        beatDirRef.current.subVectors(camera.position, c.target).normalize()
+        camera.position.addScaledVector(beatDirRef.current, -beatPush * 0.15)
       }
     }
+    // 星云模式：每帧不再触碰 OrbitControls——音频驱动的 target 抖动会和
+    // 控制器的球坐标状态打架，俯仰全开后在极点附近表现为"视角莫名移动"。
+    // 场景的生命感由行星自转/呼吸、粒子转速与环带亮度承担（见 NebulaCore）。
   })
   return null
 }

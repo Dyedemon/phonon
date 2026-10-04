@@ -374,6 +374,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uTime: { value: 0 },
       uLow: { value: 0 },
       uRms: { value: 0 },
+      uPulse: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
     vertexShader: /* glsl */`
@@ -389,6 +390,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uniform float uTime;
       uniform float uLow;
       uniform float uRms;
+      uniform float uPulse;
       uniform vec3 uLightDir;
       varying vec2 vUv;
       varying vec3 vPos;
@@ -483,8 +485,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         alpha *= ringLight;
         col *= ringLight;
 
-        // 音乐响应（低频抬亮，可感知但不闪烁）
-        alpha *= (0.5 + uLow * 0.35 + uRms * 0.15);
+        // 音乐响应（低频抬亮 + 节拍闪光，可感知但不闪烁）
+        alpha *= (0.5 + uLow * 0.35 + uRms * 0.15 + uPulse * 0.3);
 
         gl_FragColor = vec4(col, alpha);
       }
@@ -540,6 +542,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uTime: { value: 0 },
       uIntensity: { value: 0.5 },
       uLow: { value: 0 },
+      uPulse: { value: 0 },
+      uSpeed: { value: 1 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
     },
     vertexShader: /* glsl */`
@@ -550,13 +554,17 @@ export function NebulaCore({ audioRef, quality }: Props) {
       attribute float angle;
       uniform float uTime;
       uniform float uIntensity;
+      uniform float uPulse;
+      uniform float uSpeed;
       uniform float uPixelRatio;
       varying vec3 vColor;
       varying float vAlpha;
 
       void main() {
         vColor = color;
-        float angSpeed = speed / sqrt(radius) * 0.08;
+        // uSpeed：低频/响度驱动环的公转速度，节拍瞬间再踢一脚——
+        // 音乐的"推进感"主要靠这个通道
+        float angSpeed = speed / sqrt(radius) * 0.08 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
         vec3 pos = vec3(
@@ -566,7 +574,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         );
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         gl_PointSize = size * uIntensity * 80.0 * uPixelRatio / -mvPosition.z;
-        vAlpha = uIntensity * (0.28 + speed * 0.35);
+        vAlpha = uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35;
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -632,6 +640,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     transparent: false,
     uniforms: {
       uTime: { value: 0 },
+      uSpeed: { value: 1 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
@@ -643,6 +652,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       attribute float angle;
       attribute float rotation;
       uniform float uTime;
+      uniform float uSpeed;
       uniform float uPixelRatio;
       uniform vec3 uLightDir;
       varying vec3 vColor;
@@ -650,7 +660,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        float angSpeed = speed / sqrt(radius) * 0.06;
+        // 与星云粒子环同速驱动：整个环系随音乐一起加速
+        float angSpeed = speed / sqrt(radius) * 0.06 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float tilt = sin(uTime * speed * 0.8 + rotation) * 0.1;
         vec3 pos = vec3(
@@ -841,7 +852,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // 行星自转
     if (planetRef.current) {
       planetRef.current.rotation.y = t * 0.04
-      const scale = 1 + low * 0.015 + pulse * 0.01
+      // 呼吸（低频）+ 节拍踢一脚：±4.5% 的 scale 脉冲是可感知的下限
+      const scale = 1 + low * 0.035 + pulse * 0.045
       planetRef.current.scale.setScalar(scale)
       const mat = planetRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
@@ -864,7 +876,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       const scale = 1.065 + low * 0.012 + pulse * 0.009
       atmoRef.current.scale.setScalar(scale)
       const mat = atmoRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uIntensity.value = 0.4 + low * 0.3 + rms * 0.1
+      mat.uniforms.uIntensity.value = 0.4 + low * 0.3 + rms * 0.1 + pulse * 0.3
       mat.uniforms.uLow.value = low
     }
 
@@ -884,8 +896,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
       ringRef.current.rotation.z = 0.05 + Math.sin(t * 0.04) * 0.01
       const mat = ringRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.25
+      mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
       mat.uniforms.uLow.value = low
+      mat.uniforms.uPulse.value = pulse
+      mat.uniforms.uSpeed.value = 1 + low * 1.2 + rms * 0.8 + pulse * 1.5
       mat.uniforms.uPixelRatio.value = dpr
     }
 
@@ -895,6 +909,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       asteroidRef.current.rotation.z = 0.05
       const mat = asteroidRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
+      mat.uniforms.uSpeed.value = 1 + low * 1.2 + rms * 0.8 + pulse * 1.5
       mat.uniforms.uPixelRatio.value = dpr
     }
 
