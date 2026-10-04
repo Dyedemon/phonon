@@ -42,9 +42,10 @@ export function StarField({ audioRef, quality }: Props) {
   const galaxyTex = useMemo(() => {
     const w = 2048
     const h = 1024
-    // 1) 云雾层（低分辨率逐像素计算，放大后插值平滑）
-    const cw = 512
-    const ch = 256
+    // 1) 云雾层（1024×512 逐像素计算，2× 放大——分辨率翻倍 + 高频丝缕
+    // 响应"银河有点糊"）
+    const cw = 1024
+    const ch = 512
     const cloud = document.createElement('canvas')
     cloud.width = cw
     cloud.height = ch
@@ -54,12 +55,10 @@ export function StarField({ audioRef, quality }: Props) {
     const base = [5, 7, 24]
     const tintA = [108, 128, 255]
     const tintB = [172, 134, 255]
-    // 离散远星系涂斑（小画布坐标，椭圆高斯，各自色调/倾角）
-    // （原左上那枚最明显的蓝白涂斑已按用户要求删除）
+    // 离散远星系涂斑：两枚，贴在银河带两侧（用户要求）
     const smudges = [
-      { cx: 0.62, cy: 0.24, rx: 0.028, ry: 0.012, rot: -0.4, c: [190, 170, 230], a: 0.24 },
-      { cx: 0.86, cy: 0.62, rx: 0.06, ry: 0.02, rot: 0.2, c: [120, 150, 235], a: 0.2 },
-      { cx: 0.4, cy: 0.78, rx: 0.035, ry: 0.014, rot: -0.7, c: [160, 150, 240], a: 0.22 },
+      { cx: 0.4, cy: 0.5, rx: 0.03, ry: 0.013, rot: 0.4, c: [150, 160, 255], a: 0.22 },
+      { cx: 0.6, cy: 0.42, rx: 0.024, ry: 0.011, rot: -0.35, c: [190, 170, 230], a: 0.2 },
     ]
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
@@ -68,13 +67,14 @@ export function StarField({ audioRef, quality }: Props) {
         const az = Math.abs(((((u - 0.5) % 1) + 1.5) % 1) - 0.5)
         const azEnv = Math.exp(-(az * az) / (0.13 * 0.13))
         const by = ch * 0.42 + Math.sin(u * Math.PI * 2) * ch * 0.07
-        const dy = (y - by) / (ch * 0.07)
+        const dy = (y - by) / (ch * 0.058)
         let a = Math.exp(-dy * dy) * azEnv
-        // 平滑伪噪声：整数周期正弦叠加（水平无缝）
+        // 平滑伪噪声：整数周期正弦叠加（水平无缝），高频项给丝缕感
         const n1 = Math.sin(u * Math.PI * 2 * 3 + y * 0.11) * 0.5 + 0.5
         const n2 = Math.sin(u * Math.PI * 2 * 7 + y * 0.23 + 1.7) * 0.5 + 0.5
         const n3 = Math.sin(u * Math.PI * 2 * 13 + y * 0.05 + 4.2) * 0.5 + 0.5
-        a *= (0.45 + 0.4 * n1 * n2 + 0.15 * n3) * 0.8
+        const n4 = Math.sin(u * Math.PI * 2 * 21 + y * 0.31 + 2.4) * 0.5 + 0.5
+        a *= 0.4 + 0.4 * n1 * n2 + 0.12 * n3 + 0.08 * n4
         // 尘埃暗纹（只落在带内）
         const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
         a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
@@ -139,7 +139,9 @@ export function StarField({ audioRef, quality }: Props) {
     const colors = new Float32Array(TWINKLE_COUNT * 3)
 
     for (let i = 0; i < TWINKLE_COUNT; i++) {
-      const r = 30 + Math.random() * 25
+      // 半径偏置：sqrt 让大多数星落在远壳（50~72），近处只留少量
+      // （用户要求：离球越远星越多，近处有但不能多）
+      const r = 34 + 38 * Math.sqrt(Math.random())
       const theta = Math.random() * Math.PI * 2
       const phi = Math.acos(2 * Math.random() - 1)
       positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
