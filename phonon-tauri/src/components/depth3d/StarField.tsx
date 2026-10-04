@@ -21,9 +21,10 @@ function qualityScale(quality?: string) {
 
 // 远景星空 — 银河底 + 亮星呼吸层 + 星流
 // （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
-// 星流端点：整体推离行星（近端 |45|、远端 |93|，贴近银河球内侧）
-const STREAM_A = new THREE.Vector3(-45, 4, 3)
-const STREAM_B = new THREE.Vector3(28, 38, -80)
+// 星流端点：再推远一档（近端 |58|、远端 |115|——加法渲染无深度写入，
+// 超出银河球也能正常叠在背景上）
+const STREAM_A = new THREE.Vector3(-58, 5, 4)
+const STREAM_B = new THREE.Vector3(34, 46, -100)
 const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
 const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
 
@@ -251,7 +252,7 @@ export function StarField({ audioRef, quality }: Props) {
       positions[i * 3] = base.x
       positions[i * 3 + 1] = base.y
       positions[i * 3 + 2] = base.z
-      sizes[i] = 0.7 + Math.random() * 0.9
+      sizes[i] = 1.4 + Math.random() * 2.2
       alphas[i] = 0.18 + Math.random() * 0.32
     }
 

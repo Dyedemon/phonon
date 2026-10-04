@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
@@ -13,11 +13,11 @@ const PLANET_RADIUS = 4.5
 
 function qualityPreset(quality?: string) {
   switch (quality) {
-    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  ringSeg: 128 }
-    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  ringSeg: 200 }
-    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  ringSeg: 480 }
+    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  nebulaN: 1000, ringSeg: 128 }
+    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  nebulaN: 1800, ringSeg: 200 }
+    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  nebulaN: 3500, ringSeg: 480 }
     case 'high':
-    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  ringSeg: 320 }
+    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  nebulaN: 2500, ringSeg: 320 }
   }
 }
 
@@ -63,7 +63,7 @@ const NOISE_UTILS = /* glsl */`
   }
 `
 
-// 星云主题：行星自转 + 双卫星 + 单环带 + 小行星带
+// 星云主题：行星自转 + 双卫星 + 单环带 + 星云粒子环
 export function NebulaCore({ audioRef, quality }: Props) {
   const groupRef = useRef<THREE.Group>(null)
   const planetRef = useRef<THREE.Mesh>(null)
@@ -72,6 +72,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const moonRef = useRef<THREE.Mesh>(null)
   const moon2Ref = useRef<THREE.Mesh>(null)
   const planetRingRef = useRef<THREE.Mesh>(null)
+  const ringRef = useRef<THREE.Points>(null)
 
   const q = qualityPreset(quality)
 
@@ -459,6 +460,106 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
+  // ─── 星云粒子环 ───
+  const nebulaGeo = useMemo(() => {
+    const geo = new THREE.BufferGeometry()
+    const count = q.nebulaN
+    const positions = new Float32Array(count * 3)
+    const sizes = new Float32Array(count)
+    const colors = new Float32Array(count * 3)
+    const speeds = new Float32Array(count)
+    const radii = new Float32Array(count)
+    const angles = new Float32Array(count)
+
+    for (let i = 0; i < count; i++) {
+      // 半径分层：环带 mesh 到 11.7 为止，星云粒子占 12.2~17——
+      // 之前 7~17 与环带完全重叠，紫色颗粒被看成环带纹理，认不出是独立一层
+      const r = 12.2 + Math.pow(Math.random(), 0.6) * 4.8
+      const angle = Math.random() * Math.PI * 2
+      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 12.2) * 0.06)
+
+      positions[i * 3] = Math.cos(angle) * r
+      positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale
+      positions[i * 3 + 2] = Math.sin(angle) * r
+
+      sizes[i] = 0.08 + Math.random() * 0.22
+      speeds[i] = 0.06 + Math.random() * 0.22
+      radii[i] = r
+      angles[i] = angle
+
+      const hue = 0.82 - (r - 12.2) / 4.8 * 0.25
+      const col = new THREE.Color().setHSL(hue, 0.65, 0.62)
+      colors[i * 3] = col.r
+      colors[i * 3 + 1] = col.g
+      colors[i * 3 + 2] = col.b
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1))
+    geo.setAttribute('radius', new THREE.BufferAttribute(radii, 1))
+    geo.setAttribute('angle', new THREE.BufferAttribute(angles, 1))
+    return geo
+  }, [q.nebulaN])
+
+  const nebulaMat = useMemo(() => new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uTime: { value: 0 },
+      uIntensity: { value: 0.5 },
+      uLow: { value: 0 },
+      uPulse: { value: 0 },
+      uSpeed: { value: 1 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+    },
+    vertexShader: /* glsl */`
+      attribute float size;
+      attribute vec3 color;
+      attribute float speed;
+      attribute float radius;
+      attribute float angle;
+      uniform float uTime;
+      uniform float uIntensity;
+      uniform float uPulse;
+      uniform float uSpeed;
+      uniform float uPixelRatio;
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vColor = color;
+        // uSpeed：低频/响度驱动环的公转速度，节拍瞬间再踢一脚——
+        // 音乐的"推进感"主要靠这个通道
+        float angSpeed = speed / sqrt(radius) * 0.08 * uSpeed;
+        float currentAngle = angle + uTime * angSpeed;
+        float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
+        vec3 pos = vec3(
+          cos(currentAngle) * radius,
+          position.y + wobble,
+          sin(currentAngle) * radius
+        );
+        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+        gl_PointSize = size * uIntensity * 80.0 * uPixelRatio / -mvPosition.z;
+        vAlpha = uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float alpha = smoothstep(0.5, 0.05, d) * vAlpha;
+        gl_FragColor = vec4(vColor, alpha);
+      }
+    `,
+  }), [])
+
   // ─── 卫星 1（主卫星，岩石质地，陨石坑） ───
   const moonMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
@@ -574,7 +675,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  useFrame(({ clock }, delta) => {
+  // 质量预设切换会重建几何体：主动 dispose 旧的，避免 GPU 缓冲滞留
+  useEffect(() => () => {
+    nebulaGeo.dispose()
+  }, [nebulaGeo])
+
+  useFrame(({ clock, viewport }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
     // 记录启动时间
@@ -584,6 +690,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
     // （delta 驱动，帧率变化不影响时长）
     initFadeRef.current = Math.min(1, initFadeRef.current + delta * 0.9)
     const fade = initFadeRef.current
+
+    // 粒子尺寸跟随画布实际 dpr（governor 降档时不突变）
+    const dpr = viewport.dpr || 1
 
     lowSmRef.current = lerp(lowSmRef.current, d.lowFreqAvg * fade, 0.08)
     rmsSmRef.current = lerp(rmsSmRef.current, d.rms * fade, 0.06)
@@ -652,6 +761,20 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uWave.value = ringWaveRef.current
     }
 
+    // 星云粒子环
+    // 星云粒子环：与行星环 mesh 共面（0.12/0.03），只保留极小的呼吸摆动
+    if (ringRef.current) {
+      ringRef.current.rotation.x = 0.12 + Math.sin(t * 0.06) * 0.015
+      ringRef.current.rotation.z = 0.03 + Math.sin(t * 0.04) * 0.01
+      const mat = ringRef.current.material as THREE.ShaderMaterial
+      mat.uniforms.uTime.value = t
+      mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
+      mat.uniforms.uLow.value = low
+      mat.uniforms.uPulse.value = pulse
+      mat.uniforms.uSpeed.value = 1 + low * 1.2 + rms * 0.8 + pulse * 1.5
+      mat.uniforms.uPixelRatio.value = dpr
+    }
+
     // 卫星1：绕行星公转（轨道 12.5 > 环外缘 11.7，避免每圈穿环）
     if (moonRef.current) {
       const moonDist = 12.5
@@ -694,6 +817,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
         <sphereGeometry args={[PLANET_RADIUS * 1.01, q.cloudSeg, q.cloudSeg]} />
         <primitive object={cloudLayerMat} attach="material" />
       </mesh>
+
+      {/* 星云粒子环 */}
+      <points ref={ringRef} geometry={nebulaGeo}>
+        <primitive object={nebulaMat} attach="material" />
+      </points>
 
       {/* 行星环（单一环带）——收窄一号：1.35R~2.2R，倾角 0.12 */}
       <mesh ref={planetRingRef} rotation={[0.12, 0, 0.03]}>
