@@ -55,10 +55,12 @@ export function StarField({ audioRef, quality }: Props) {
     const base = [5, 7, 24]
     const tintA = [108, 128, 255]
     const tintB = [172, 134, 255]
-    // 离散远星系涂斑：两枚，贴在银河带两侧（用户要求）
+    // 离散远星系涂斑：恢复原来的三枚（用户要求），并优化观感——
+    // 每枚 = 大而柔的光晕 + 收紧的亮核（双层高斯），盘面渐散不像脏块
     const smudges = [
-      { cx: 0.4, cy: 0.5, rx: 0.03, ry: 0.013, rot: 0.4, c: [150, 160, 255], a: 0.22 },
-      { cx: 0.6, cy: 0.42, rx: 0.024, ry: 0.011, rot: -0.35, c: [190, 170, 230], a: 0.2 },
+      { cx: 0.62, cy: 0.24, rx: 0.05, ry: 0.02, rot: -0.4, c: [178, 172, 240], a: 0.26 },
+      { cx: 0.86, cy: 0.62, rx: 0.065, ry: 0.026, rot: 0.2, c: [130, 152, 238], a: 0.22 },
+      { cx: 0.4, cy: 0.78, rx: 0.045, ry: 0.02, rot: -0.7, c: [158, 152, 242], a: 0.24 },
     ]
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
@@ -79,7 +81,7 @@ export function StarField({ audioRef, quality }: Props) {
         const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
         a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
         a = Math.max(0, Math.min(1, a))
-        // 涂斑与云带取最大值合成（避免叠亮）
+        // 涂斑与云带取最大值合成（避免叠亮）；双层高斯 = 柔和光晕 + 亮核
         let sr = 0, sg = 0, sb = 0, sa = 0
         for (const s of smudges) {
           const dxs = x - s.cx * cw
@@ -88,7 +90,8 @@ export function StarField({ audioRef, quality }: Props) {
           const sinr = Math.sin(s.rot)
           const ex = (dxs * cosr + dys * sinr) / (s.rx * cw)
           const ey = (-dxs * sinr + dys * cosr) / (s.ry * ch)
-          const g = Math.exp(-(ex * ex + ey * ey)) * s.a
+          const e2 = ex * ex + ey * ey
+          const g = s.a * (0.55 * Math.exp(-e2) + 0.45 * Math.exp(-e2 * 4))
           if (g > sa) { sr = s.c[0]; sg = s.c[1]; sb = s.c[2]; sa = g }
         }
         const o = (y * cw + x) * 4
