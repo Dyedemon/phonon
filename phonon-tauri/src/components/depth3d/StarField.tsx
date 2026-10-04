@@ -80,11 +80,14 @@ export function StarField({ audioRef, quality }: Props) {
       void main() {
         // 远景星层常亮：用户两轮反馈后彻底去掉闪烁（音乐响应保留在 uIntensity）
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        // 相机会飞进星壳（maxDistance 45 > 内壳 40）：近距星被按距离反比
-        // 放大成几十像素的失焦灰斑——钳制最大点径 + 近距淡出双保险
+        // 近距星钳制点径 + 近距淡出，防失焦灰斑。
+        // 远处亚像素星会因跨像素采样忽明忽暗（假闪烁）：设最小点径，
+        // 理想尺寸不足时按能量守恒比例调暗——稳定不闪的暗星
         float depth = -mvPosition.z;
-        gl_PointSize = min(size * uPixelRatio * 1.5 / depth * 80.0, 5.0 * uPixelRatio);
-        vAlpha = 0.85 * uIntensity * smoothstep(6.0, 20.0, depth);
+        float ps = size * uPixelRatio * 1.5 / depth * 80.0;
+        float clamped = clamp(ps, 1.5, 5.0 * uPixelRatio);
+        gl_PointSize = clamped;
+        vAlpha = 0.85 * uIntensity * smoothstep(6.0, 20.0, depth) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -159,14 +162,16 @@ export function StarField({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        // 亮星层只留极轻呼吸（幅度 0.15），不再有可察觉的"一闪一闪"
+        // 亮星层只留极轻呼吸（幅度 0.15），不再有可察觉的"一闪一闪"。
+        // 同样做最小点径 + 能量守恒调暗，杜绝亚像素跳变
         float twinkle = sin(uTime * 0.6 + phase) * 0.15 + 0.85;
 
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        // 同普通星层：钳制点径 + 近距淡出，杜绝近掠星变成大灰斑
         float depth = -mvPosition.z;
-        gl_PointSize = min(size * uPixelRatio / depth * 120.0, 7.0 * uPixelRatio);
-        vAlpha = twinkle * uIntensity * smoothstep(8.0, 25.0, depth);
+        float ps = size * uPixelRatio / depth * 120.0;
+        float clamped = clamp(ps, 2.0, 7.0 * uPixelRatio);
+        gl_PointSize = clamped;
+        vAlpha = twinkle * uIntensity * smoothstep(8.0, 25.0, depth) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
