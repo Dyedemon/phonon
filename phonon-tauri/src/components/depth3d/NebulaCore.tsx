@@ -533,7 +533,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        // uSpeed：低频/响度驱动环的公转速度，节拍瞬间再踢一脚——
+        // uSpeed：播放时恒为 1（平滑起步/停下），暂停即缓降至 0——
         // 音乐的"推进感"主要靠这个通道
         // 系数 1.0：播放时绕球公转（用户要求减半）。
         // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
@@ -777,9 +777,11 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped
       mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
       mat.uniforms.uLow.value = low
-      // 公转速度：目标 = 播放能量；音频特征停止推送（暂停/停止）超过 0.6s
-      // 视为目标 0。实际速度向目标平滑靠拢——歌曲停了缓缓减速直至静止
-      const targetSpeed = featuresStaleMs() < 600 ? low * 3.0 + rms * 2.0 : 0
+      // 公转速度：播放时恒速（不随节拍/能量起伏——用户要求删除），
+      // 暂停/停止后缓缓减速直至静止。
+      // '在播放'判定：特征新鲜 且 能量未归零（静音帧会持续把能量拉回 0）
+      const playing = featuresStaleMs() < 600 && (d.lowFreqAvg > 0.01 || d.rms > 0.01)
+      const targetSpeed = playing ? 1.0 : 0
       orbitSpeedRef.current = targetSpeed > orbitSpeedRef.current
         ? Math.min(targetSpeed, orbitSpeedRef.current + delta * 1.2)
         : Math.max(targetSpeed, orbitSpeedRef.current - delta * 0.6)
