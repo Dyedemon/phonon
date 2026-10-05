@@ -510,6 +510,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uIntensity: { value: 0.5 },
       uLow: { value: 0 },
       uSpeed: { value: 1 },
+      uPulse: { value: 0 }, // 节拍闪光（仅提亮，不影响转速——转速无跳变）
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
     },
     vertexShader: /* glsl */`
@@ -521,6 +522,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uniform float uTime;
       uniform float uIntensity;
       uniform float uSpeed;
+      uniform float uPulse;
       uniform float uPixelRatio;
       varying vec3 vColor;
       varying float vAlpha;
@@ -544,7 +546,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float ps = size * uIntensity * 170.0 * uPixelRatio / -mvPosition.z;
         float clamped = clamp(ps, 1.5, 10.0 * uPixelRatio);
         gl_PointSize = clamped;
-        vAlpha = uIntensity * (0.28 + speed * 0.35) * min(ps / clamped, 1.0);
+        vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -772,6 +774,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uLow.value = low
       // 无常速基底：暂停时 uSpeed = 0，粒子环冻结
       mat.uniforms.uSpeed.value = low * 3.0 + rms * 2.0
+      mat.uniforms.uPulse.value = pulse
       mat.uniforms.uPixelRatio.value = dpr
     }
 
