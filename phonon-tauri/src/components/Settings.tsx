@@ -299,6 +299,25 @@ export default function Settings({ volumeMode, onVolumeModeChange, addToast, onS
     { id: 'about', label: t('settings.tab.about') },
   ]
 
+  // E2E 测试钩子：与 App.tsx 的 __phononTestSetActiveTab 同模式。
+  // setTimeout(0) 让 setState 落在 Runtime.evaluate 的 microtask
+  // checkpoint 之后，保证 Playwright 的同步 evaluate 拿到返回值时
+  // React 才开始提交。
+  useEffect(() => {
+    const ids = settingsTabs.map((t) => t.id)
+    // @ts-expect-error - test-only global
+    window.__phononTestSetSettingsTab = (tab: string): boolean => {
+      if (!ids.includes(tab)) return false
+      setTimeout(() => setSettingsTab(tab), 0)
+      return true
+    }
+    return () => {
+      // @ts-expect-error - cleanup
+      delete window.__phononTestSetSettingsTab
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ── Theme state ────────────────────────────────────────────
   const [themePreset, setThemePreset] = useState<ThemePreset>(() => {
     const saved = localStorage.getItem('phonon-theme-preset')

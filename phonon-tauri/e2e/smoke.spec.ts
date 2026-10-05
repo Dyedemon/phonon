@@ -25,7 +25,8 @@ test('smoke: goto + evaluate returns within 15s', async ({ page, context }) => {
       'get_playback_state': { state: 'Idle', position_secs: 0, duration_secs: null, buffer_fill: 0, current_track: null, queue_length: 0, speed: 1.0 },
       'get_queue': [], 'play_index': null, 'remove_from_queue': null, 'reorder_queue': null,
       'add_to_queue': { added: 0, duplicates: 0 }, 'add_cue_to_queue': { added: 0, duplicates: 0 },
-      'list_playlists': [], 'get_active_playlist': '__default__',
+      'list_playlists': [], 'list_system_playlists': [], 'switch_system_playlist': null,
+      'get_active_playlist': '__default__',
       'switch_playlist': null, 'delete_playlist': null, 'rename_playlist': null, 'reorder_playlists': null,
       'get_synced_folders': {}, 'sync_folder': null, 'unsync_folder': null, 'sync_folder_for_playlist': { added: 0, removed: 0 },
       'library_get_roots': [], 'library_set_roots': null, 'library_scan': null, 'scan_folder': [],
@@ -120,7 +121,13 @@ test('smoke: goto + evaluate returns within 15s', async ({ page, context }) => {
           .registerListener(event, -1)
           .then(function () {
             return function () {
-              return (window as any).__TAURI_INTERNALS__.event.unregisterListener(event, -1);
+              // React effect cleanup 可能在 __TAURI_INTERNALS__ 被清理后触发，
+              // 防御式调用避免 unlisten 阶段抛 TypeError。
+              var internals = (window as any).__TAURI_INTERNALS__;
+              if (internals && internals.event && internals.event.unregisterListener) {
+                return internals.event.unregisterListener(event, -1);
+              }
+              return Promise.resolve();
             };
           });
       },
