@@ -536,14 +536,12 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        // uSpeed：播放时恒为 1（平滑起步/停下），暂停即缓降至 0——
-        // 音乐的"推进感"主要靠这个通道
-        // 系数 1.0：播放时绕球公转（用户要求减半）。
-        // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
-        // 全局启停（uSpeed）已在 CPU 侧积分进 uPhase；这里若再乘 uSpeed，
-        // uPhase × uSpeed 的耦合会在起步/暂停坡道产生几十倍表观转速
+        // 公转：角速率 = 每粒子固有速率 × uSpeed；全局启停已由 CPU 积分进
+        // uPhase（逐帧累积），这里不能再乘 uSpeed——否则 uPhase × uSpeed
+        // 的耦合会在起步/暂停坡道产生几十倍表观转速
         float angSpeed = speed / sqrt(radius) * 1.0;
         float currentAngle = angle + uPhase * angSpeed;
+        // 原位微颤：幅度随 uSpeed 归零，暂停时完全冻结
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08 * uSpeed;
         vec3 pos = vec3(
           cos(currentAngle) * radius,
@@ -555,7 +553,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float ps = size * uIntensity * 170.0 * uPixelRatio / -mvPosition.z;
         float clamped = clamp(ps, 1.5, 10.0 * uPixelRatio);
         gl_PointSize = clamped;
-vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
+        vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -773,7 +771,6 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped
       mat.uniforms.uWave.value = ringWaveRef.current
     }
 
-    // 星云粒子环
     // 星云粒子环：与行星环 mesh 共面（0.12/0.03），只保留极小的呼吸摆动
     if (ringRef.current) {
       ringRef.current.rotation.x = 0.12 + Math.sin(t * 0.06) * 0.015
@@ -799,7 +796,7 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped
       mat.uniforms.uPixelRatio.value = dpr
     }
 
-    // 卫星1：绕行星公转（轨道 12.5 > 环外缘 11.7，避免每圈穿环）
+    // 卫星1：绕行星公转（轨道 12.5 在环带外缘 8.55 之外、星云粒子带 14.8 之内）
     if (moonRef.current) {
       const moonDist = 12.5
       const moonSpeed = 0.28
@@ -847,7 +844,7 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped
         <primitive object={nebulaMat} attach="material" />
       </points>
 
-      {/* 行星环（单一环带）——收窄一号：1.35R~2.2R，倾角 0.12 */}
+      {/* 行星环（单一环带）——1.45R~1.9R，倾角 0.12 */}
       <mesh ref={planetRingRef} rotation={[0.12, 0, 0.03]}>
         <ringGeometry args={[PLANET_RADIUS * 1.45, PLANET_RADIUS * 1.9, q.ringSeg]} />
         <primitive object={ringMat} attach="material" />

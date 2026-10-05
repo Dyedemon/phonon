@@ -35,10 +35,9 @@ export function StarField({ audioRef, quality }: Props) {
 
   // ─── 银河底：一次性 CPU 烘焙到 CanvasTexture（零每帧采样成本之外的开销） ───
   // 设计原则（用户反馈）：深空要"空"，银河带只覆盖部分方位角且不环绕；
-  // 离散涂斑已全部删除——galaxy 缓慢漂移 + 相机自由 orbit，任何一枚
-  // 都会时不时转到右上角被当成"脏块"（两轮反馈）。逐像素写 ImageData
-  // （canvas 渐变会被 Chromium 抖动渲染，量化出网状纹理）；噪声全部
-  // 整数周期正弦，水平方向天然无缝
+  // 三枚离散远星系涂斑作为点缀（双层高斯：柔光晕 + 亮核）。逐像素写
+  // ImageData（canvas 渐变会被 Chromium 抖动渲染，量化出网状纹理）；
+  // 噪声全部整数周期正弦，水平方向天然无缝
   const galaxyTex = useMemo(() => {
     const w = 2048
     const h = 1024
@@ -132,7 +131,6 @@ export function StarField({ audioRef, quality }: Props) {
   // 150：静态小星层已整层删除（用户反馈），天空的点状元素只留呼吸亮星
   const TWINKLE_COUNT = Math.floor(150 * qScale)
 
-  // 预设切换重建几何体时主动 dispose 旧的（与 NebulaCore 行为一致）
   // 较亮的闪烁星（随高频响应）
   const twinkleGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry()
