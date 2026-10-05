@@ -533,7 +533,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vColor = color;
         // uSpeed：低频/响度驱动环的公转速度，节拍瞬间再踢一脚——
         // 音乐的"推进感"主要靠这个通道
-        float angSpeed = speed / sqrt(radius) * 0.08 * uSpeed;
+        // 系数 2.7：播放时明显绕球公转（中速 ~60s 一圈，重低音加速到 ~25s）
+        // 0.08 时一圈要几十分钟，等于静止（与小行星带当年同款问题）
+        float angSpeed = speed / sqrt(radius) * 2.7 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
         vec3 pos = vec3(
