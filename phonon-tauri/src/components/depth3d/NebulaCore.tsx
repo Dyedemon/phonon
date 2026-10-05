@@ -524,6 +524,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uniform float uTime;
       uniform float uIntensity;
       uniform float uSpeed;
+      uniform float uPulse;
       uniform float uPixelRatio;
       varying vec3 vColor;
       varying float vAlpha;
@@ -534,7 +535,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         // 音乐的"推进感"主要靠这个通道
         // 系数 1.0：播放时绕球公转（用户要求减半）。
         // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
-        float angSpeed = speed / sqrt(radius) * 0.5 * uSpeed;
+        float angSpeed = speed / sqrt(radius) * 1.0 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
         vec3 pos = vec3(
@@ -547,7 +548,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float ps = size * uIntensity * 170.0 * uPixelRatio / -mvPosition.z;
         float clamped = clamp(ps, 1.5, 10.0 * uPixelRatio);
         gl_PointSize = clamped;
-vAlpha = (uIntensity * (0.28 + speed * 0.35)) * min(ps / clamped, 1.0);
+vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -780,6 +781,7 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35)) * min(ps / clamped, 1.0);
         ? Math.min(targetSpeed, orbitSpeedRef.current + delta * 1.2)
         : Math.max(targetSpeed, orbitSpeedRef.current - delta * 0.6)
       mat.uniforms.uSpeed.value = orbitSpeedRef.current
+      mat.uniforms.uPulse.value = pulse
       mat.uniforms.uPixelRatio.value = dpr
     }
 
