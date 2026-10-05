@@ -87,6 +87,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const initFadeRef = useRef(0) // 启动淡入：0→1，约 1.1 秒
   const ringWaveRef = useRef(1) // 环带节拍波进度：1 = 空闲，beat 时归 0
   const orbitSpeedRef = useRef(0) // 星云粒子环公转速度：向目标平滑加减速
+  const orbitPhaseRef = useRef(0) // 公转相位：逐帧累积，速度变化时位置连续不跳变
 
   // ─── 行星表面 shader ─── 分层地形 + 海洋高光 + 黄昏带 + 极光 + 火山 + 城市光
   // （噪声八度已按性能预算削减；"云影"目前是标量近似，真采样待烘焙包）
@@ -514,6 +515,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uIntensity: { value: 0.5 },
       uLow: { value: 0 },
       uSpeed: { value: 1 },
+      uPhase: { value: 0 },
       uPulse: { value: 0 }, // 节拍闪光（仅提亮，不影响转速——转速无跳变）
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
     },
@@ -526,6 +528,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uniform float uTime;
       uniform float uIntensity;
       uniform float uSpeed;
+      uniform float uPhase;
       uniform float uPulse;
       uniform float uPixelRatio;
       varying vec3 vColor;
@@ -538,8 +541,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
         // 系数 1.0：播放时绕球公转（用户要求减半）。
         // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
         float angSpeed = speed / sqrt(radius) * 1.0 * uSpeed;
-        float currentAngle = angle + uTime * angSpeed;
-        float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
+        float currentAngle = angle + uPhase * angSpeed;
+        float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08 * uSpeed;
         vec3 pos = vec3(
           cos(currentAngle) * radius,
           position.y + wobble,
@@ -786,6 +789,10 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped
         ? Math.min(targetSpeed, orbitSpeedRef.current + delta * 1.2)
         : Math.max(targetSpeed, orbitSpeedRef.current - delta * 0.6)
       mat.uniforms.uSpeed.value = orbitSpeedRef.current
+      // 相位累积：位置 = 初始角 + 相位 × 角速度——转速变化时位置连续，
+      // 不会像 uTime × 变速那样在起步/暂停瞬间跳变（用户反馈的疯转）
+      orbitPhaseRef.current += delta * orbitSpeedRef.current
+      mat.uniforms.uPhase.value = orbitPhaseRef.current
       mat.uniforms.uPulse.value = pulse
       mat.uniforms.uPixelRatio.value = dpr
     }
