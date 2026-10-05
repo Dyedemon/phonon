@@ -469,6 +469,9 @@ const zh: Record<string, string> = {
   'player.shuffle.on': '随机播放已开启',
   'player.shuffle.off': '随机播放已关闭',
   'library.editMetadata.title': '编辑元数据',
+  'library.playAlbum': '播放专辑',
+  'library.addAlbumToQueue': '加入队列',
+  'library.editAlbum': '编辑专辑',
 
   // Spectrum
   'spectrum.title': '频谱',
@@ -1227,6 +1230,9 @@ const en: Record<string, string> = {
   'player.shuffle.on': 'Shuffle on',
   'player.shuffle.off': 'Shuffle off',
   'library.editMetadata.title': 'Edit Metadata',
+  'library.playAlbum': 'Play album',
+  'library.addAlbumToQueue': 'Add to queue',
+  'library.editAlbum': 'Edit album',
 
   // Spectrum
   'spectrum.title': 'Spectrum',

@@ -17,9 +17,11 @@
  * instead of album title and shows the artist's album grid above the
  * track table (driven by props).
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useI18n } from '../../i18n'
 import * as libraryApi from '../../api/library'
+import { addToQueue, clearQueue } from '../../api/queue'
+import { playIndex } from '../../api/player'
 import type { LibraryTrack, AlbumInfo } from '../../api/library'
 import TrackTable from './TrackTable'
 
@@ -29,12 +31,8 @@ export interface AlbumDetailPageProps {
   addToast?: (msg: string, kind?: 'info' | 'warn' | 'error') => void
   /** Currently-playing track id (passed through to TrackTable). */
   currentlyPlayingId?: number | null
-  onPlayTrack?: (trackId: number) => void
   onAddToQueue?: (trackId: number) => void
-  onAddToPlaylist?: (trackId: number) => void
   onEditMetadata?: (trackId: number) => void
-  onReplaceCover?: (trackId: number) => void
-  onRescanMetadata?: (trackId: number) => void
   /** Open album editor (AlbumEditModal). */
   onEditAlbum?: (albumId: number) => void
   /** Push artist detail onto the navigation stack. */
@@ -55,12 +53,8 @@ export default function AlbumDetailPage({
   albumId,
   addToast,
   currentlyPlayingId,
-  onPlayTrack,
   onAddToQueue,
-  onAddToPlaylist,
   onEditMetadata,
-  onReplaceCover,
-  onRescanMetadata,
   onEditAlbum,
   onOpenArtist,
 }: AlbumDetailPageProps) {
@@ -69,7 +63,7 @@ export default function AlbumDetailPage({
   const [tracks, setTracks] = useState<LibraryTrack[]>([])
   const [coverUrl, setCoverUrl] = useState<string | null>(null)
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     let cancelled = false
     void (async () => {
       try {
@@ -91,12 +85,34 @@ export default function AlbumDetailPage({
     return () => { cancelled = true }
   }, [albumId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const playAlbum = () => {
-    const first = tracks[0]
-    if (first) onPlayTrack?.(first.id)
-  }
-  const addAlbumToQueue = () => {
-    tracks.forEach((tr) => onAddToQueue?.(tr.id))
+  useEffect(() => refresh(), [refresh])
+
+  // 专辑详情页的播放上下文 = 专辑曲目本身（所见即所得）：
+  // 双击任一行从该行连播整张专辑，"播放专辑"从第一首开始。
+  const playFromAlbum = useCallback(async (trackId: number | null) => {
+    const playable = tracks.filter((tr) => tr.file_path)
+    if (playable.length === 0) return
+    const pos = trackId == null
+      ? 0
+      : Math.max(0, playable.findIndex((tr) => tr.id === trackId))
+    try {
+      await clearQueue()
+      await addToQueue(playable.map((tr) => tr.file_path))
+      await playIndex(pos)
+    } catch (e) {
+      addToast?.(String(e), 'error')
+    }
+  }, [tracks, addToast])
+
+  const addAlbumToQueue = async () => {
+    const paths = tracks.map((tr) => tr.file_path).filter(Boolean)
+    if (paths.length === 0) return
+    try {
+      await addToQueue(paths)
+      addToast?.(t('toast.addedToQueue', '已添加到播放队列'), 'info')
+    } catch (e) {
+      addToast?.(String(e), 'error')
+    }
   }
 
   return (
@@ -135,14 +151,14 @@ export default function AlbumDetailPage({
             {album?.total_duration_ms ? ` · ${fmtHMS(album.total_duration_ms)}` : ''}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={playAlbum} disabled={tracks.length === 0}>
-              {'\u25B6'} {t('library.history', 'Play album')}
+            <button className="btn btn-primary btn-sm" onClick={() => playFromAlbum(null)} disabled={tracks.length === 0}>
+              {'\u25B6'} {t('library.playAlbum', 'Play album')}
             </button>
             <button className="btn btn-outline btn-sm" onClick={addAlbumToQueue} disabled={tracks.length === 0}>
-              {t('library.menu', 'Add to queue')}
+              {t('library.addAlbumToQueue', 'Add to queue')}
             </button>
             <button className="btn btn-outline btn-sm" onClick={() => onEditAlbum?.(albumId)}>
-              {'\u270E'} {t('library.subtab.albums', 'Edit album')}
+              {'\u270E'} {t('library.editAlbum', 'Edit album')}
             </button>
           </div>
         </div>
@@ -153,12 +169,9 @@ export default function AlbumDetailPage({
           tracks={tracks}
           currentlyPlayingId={currentlyPlayingId}
           subTab="all"
-          onPlayTrack={onPlayTrack}
+          onPlayTrack={(id) => void playFromAlbum(id)}
           onAddToQueue={onAddToQueue}
-          onAddToPlaylist={onAddToPlaylist}
           onEditMetadata={onEditMetadata}
-          onReplaceCover={onReplaceCover}
-          onRescanMetadata={onRescanMetadata}
         />
       </div>
     </div>

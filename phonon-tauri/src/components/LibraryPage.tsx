@@ -13,6 +13,7 @@ import AlbumGrid from './library/AlbumGrid'
 import ArtistGenreList from './library/ArtistGenreList'
 import AlbumDetailPage from './library/AlbumDetailPage'
 import MetadataEditModal from './library/MetadataEditModal'
+import AlbumEditModal from './library/AlbumEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
 import { getRoots, getTracks, listAlbums, listArtists } from '../api/library'
 import { addToQueue, clearQueue } from '../api/queue'
@@ -86,6 +87,7 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   const [artists, setArtists] = useState<ArtistInfo[]>([])
   const [hasRoots, setHasRoots] = useState<boolean | null>(null)
   const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
+  const [editingAlbum, setEditingAlbum] = useState<{ id: number; title: string } | null>(null)
 
   // Fetch tracks + albums + artists on mount and when retryKey changes.
   useEffect(() => {
@@ -290,6 +292,7 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
               albumId={top.id}
               addToast={addToast}
               {...trackTableCallbacks}
+              onEditAlbum={(albumId) => setEditingAlbum({ id: albumId, title: top.title })}
               onOpenArtist={(artistId, name) => setDetailStack((s) => [...s, { kind: 'artist', id: artistId, title: name }])}
             />
           ) : subTab === 'all' || subTab === 'favorites' || subTab === 'recent' ? (
@@ -313,6 +316,20 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
           )}
         </LibraryErrorBoundary>
       </div>
+
+      {/* Album bulk editor — opened from AlbumDetailPage's "编辑专辑" */}
+      {editingAlbum && (
+        <AlbumEditModal
+          albumId={editingAlbum.id}
+          albumTitle={editingAlbum.title}
+          onClose={() => setEditingAlbum(null)}
+          onSaved={() => {
+            setRetryKey((k) => k + 1)
+            window.dispatchEvent(new CustomEvent('library-changed'))
+          }}
+          addToast={addToast}
+        />
+      )}
 
       {/* Metadata edit modal — opened from TrackTable's context menu */}
       {editingTrackId !== null && (
