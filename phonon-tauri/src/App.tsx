@@ -2364,49 +2364,51 @@ function PlayerBar({
                 ['normal', t('player.mode.sequential.desc')],
                 ['repeat_all', t('player.mode.repeatAll.desc')],
                 ['repeat_one', t('player.mode.repeatOne.desc')],
-              ] as const).map(([m, label]) => (
-                <button
-                  key={m}
-                  className="btn btn-sm btn-ghost"
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, color: 'inherit' }}
-                  onClick={() => {
-                    invoke('set_playback_mode', { mode: m })
-                      .then(() => {
-                        setPlaybackMode(m)
-                        addToast(label)
-                        setShowModeMenu(false)
-                      })
-                      .catch((e) => {
-                        console.error('Failed to set playback mode:', e);
-                        addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
-                      });
-                  }}
-                >
-                  <span>{label}</span>
-                  {playbackMode === m && <span style={{ color: 'var(--accent)' }}>✓</span>}
-                </button>
-              ))}
-              <div style={{ height: 1, background: 'var(--border)', margin: '4px 6px' }} />
-              <button
-                className="btn btn-sm btn-ghost"
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, color: 'inherit' }}
-                onClick={() => {
-                  const next = !shuffleOn
-                  invoke('set_shuffle', { enabled: next })
-                    .then(() => {
-                      setShuffleOn(next)
-                      addToast(next ? t('player.shuffle.on', 'Shuffle on') : t('player.shuffle.off', 'Shuffle off'))
-                      setShowModeMenu(false)
-                    })
-                    .catch((e) => {
-                      console.error('Failed to set shuffle:', e);
-                      addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
-                    });
-                }}
-              >
-                <span>{t('player.shuffle.desc', 'Shuffle')}</span>
-                {shuffleOn && <span style={{ color: 'var(--accent)' }}>✓</span>}
-              </button>
+                ['shuffle', t('player.shuffle.desc', 'Shuffle')],
+              ] as const).map(([m, label]) => {
+                // 四选一互斥：随机播放与三个循环模式互斥（引擎仍支持
+                // 组合，UI 按播放器的惯例做单选）。
+                const active = shuffleOn ? 'shuffle' : playbackMode
+                return (
+                  <button
+                    key={m}
+                    className="btn btn-sm btn-ghost"
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, color: 'inherit' }}
+                    onClick={() => {
+                      if (m === 'shuffle') {
+                        invoke('set_shuffle', { enabled: true })
+                          .then(() => invoke('set_playback_mode', { mode: 'normal' }))
+                          .then(() => {
+                            setShuffleOn(true)
+                            setPlaybackMode('normal')
+                            addToast(label)
+                            setShowModeMenu(false)
+                          })
+                          .catch((e) => {
+                            console.error('Failed to set shuffle:', e);
+                            addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
+                          });
+                      } else {
+                        invoke('set_playback_mode', { mode: m })
+                          .then(() => invoke('set_shuffle', { enabled: false }))
+                          .then(() => {
+                            setPlaybackMode(m)
+                            setShuffleOn(false)
+                            addToast(label)
+                            setShowModeMenu(false)
+                          })
+                          .catch((e) => {
+                            console.error('Failed to set playback mode:', e);
+                            addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
+                          });
+                      }
+                    }}
+                  >
+                    <span>{label}</span>
+                    {active === m && <span style={{ color: 'var(--accent)' }}>✓</span>}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
