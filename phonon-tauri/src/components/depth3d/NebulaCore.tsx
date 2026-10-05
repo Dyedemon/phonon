@@ -540,7 +540,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
         // 音乐的"推进感"主要靠这个通道
         // 系数 1.0：播放时绕球公转（用户要求减半）。
         // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
-        float angSpeed = speed / sqrt(radius) * 1.0 * uSpeed;
+        // 全局启停（uSpeed）已在 CPU 侧积分进 uPhase；这里若再乘 uSpeed，
+        // uPhase × uSpeed 的耦合会在起步/暂停坡道产生几十倍表观转速
+        float angSpeed = speed / sqrt(radius) * 1.0;
         float currentAngle = angle + uPhase * angSpeed;
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08 * uSpeed;
         vec3 pos = vec3(
