@@ -465,6 +465,10 @@ const zh: Record<string, string> = {
   'player.mode.repeatAll.desc': '全部循环',
   'player.mode.repeatOne.desc': '单曲循环',
   'player.mode.hint': '点击切换播放模式',
+  'player.shuffle.desc': '随机播放',
+  'player.shuffle.on': '随机播放已开启',
+  'player.shuffle.off': '随机播放已关闭',
+  'library.editMetadata.title': '编辑元数据',
 
   // Spectrum
   'spectrum.title': '频谱',
@@ -1219,6 +1223,10 @@ const en: Record<string, string> = {
   'player.mode.repeatAll.desc': 'Repeat All',
   'player.mode.repeatOne.desc': 'Repeat One',
   'player.mode.hint': 'Click to change mode',
+  'player.shuffle.desc': 'Shuffle',
+  'player.shuffle.on': 'Shuffle on',
+  'player.shuffle.off': 'Shuffle off',
+  'library.editMetadata.title': 'Edit Metadata',
 
   // Spectrum
   'spectrum.title': 'Spectrum',

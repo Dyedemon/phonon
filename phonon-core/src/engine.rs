@@ -909,6 +909,16 @@ pub enum PlaybackMode {
     RepeatAll,
 }
 
+/// Shuffle walk state — orthogonal to [`PlaybackMode`]. `order` is a random
+/// permutation of queue indices; it is rebuilt lazily whenever the queue
+/// resizes, the current index is no longer on it, or a RepeatAll pass
+/// completes.
+#[derive(Default)]
+pub struct ShuffleState {
+    pub enabled: bool,
+    pub order: Option<Vec<usize>>,
+}
+
 /// Playback engine configuration.
 pub struct EngineConfig {
     /// Ring buffer size in samples (default: 2 seconds at 48kHz stereo = 192000).
@@ -1014,6 +1024,8 @@ pub struct PlaybackEngine {
     hw_volume_cb: HwVolumeCallback,
     /// Playback mode (Normal, RepeatOne, RepeatAll).
     playback_mode: Arc<Mutex<PlaybackMode>>,
+    /// Shuffle walk (enabled flag + random permutation of queue indices).
+    shuffle_state: Arc<Mutex<ShuffleState>>,
     /// Generation counter incremented on each start_playback/stop.
     /// Decode threads check this to know when they're stale.
     decode_generation: Arc<AtomicU64>,
@@ -1360,6 +1372,7 @@ impl PlaybackEngine {
             speed_changed: Arc::new(AtomicBool::new(false)),
             hw_volume_cb,
             playback_mode: Arc::new(Mutex::new(PlaybackMode::Normal)),
+            shuffle_state: Arc::new(Mutex::new(ShuffleState::default())),
             decode_generation: Arc::new(AtomicU64::new(0)),
             time_stretch_factory: Arc::new(Mutex::new(None)),
             bit_depth,
@@ -1480,6 +1493,118 @@ impl PlaybackEngine {
     /// Get the current playback mode.
     pub fn get_playback_mode(&self) -> PlaybackMode {
         *self.playback_mode.lock().unwrap()
+    }
+
+    /// Enable/disable shuffle. Disabling also drops the walk order so a
+    /// later re-enable starts from a fresh permutation.
+    pub fn set_shuffle(&self, on: bool) {
+        let mut st = self.shuffle_state.lock().unwrap();
+        st.enabled = on;
+        if !on {
+            st.order = None;
+        }
+    }
+
+    pub fn get_shuffle(&self) -> bool {
+        self.shuffle_state.lock().map(|s| s.enabled).unwrap_or(false)
+    }
+
+    /// Fisher–Yates over 0..len, optionally anchoring `head` at position 0.
+    /// Time+pid seeded xorshift: shuffle needs no cryptographic randomness
+    /// and phonon-core stays free of a rand dependency.
+    fn build_shuffle_order(len: usize, head: Option<usize>) -> Vec<usize> {
+        fn xorshift(state: &mut u64) -> u64 {
+            let mut x = *state;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *state = x;
+            x
+        }
+        let mut seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
+            ^ ((std::process::id() as u64) << 32)
+            ^ 0x9E3779B97F4A7C15;
+        if seed == 0 {
+            seed = 0x9E3779B97F4A7C15;
+        }
+        let mut order: Vec<usize> = (0..len).collect();
+        for i in (1..order.len()).rev() {
+            let j = (xorshift(&mut seed) as usize) % (i + 1);
+            order.swap(i, j);
+        }
+        if let Some(h) = head {
+            if let Some(p) = order.iter().position(|&x| x == h) {
+                order.swap(0, p);
+            }
+        }
+        order
+    }
+
+    /// Next queue index under shuffle. Returns None when shuffle is off (or
+    /// the walk is exhausted in Normal mode) so callers fall back to
+    /// `cur + 1` and the existing end-of-queue handling.
+    fn shuffled_next(
+        st: &Arc<Mutex<ShuffleState>>,
+        mode: PlaybackMode,
+        queue_len: usize,
+        cur: usize,
+    ) -> Option<usize> {
+        let mut st = st.lock().ok()?;
+        if !st.enabled || queue_len == 0 {
+            return None;
+        }
+        let stale = match st.order.as_ref() {
+            Some(o) => o.len() != queue_len || !o.contains(&cur),
+            None => true,
+        };
+        if stale {
+            st.order = Some(Self::build_shuffle_order(queue_len, Some(cur)));
+        }
+        let order = st.order.as_ref().unwrap();
+        let pos = order.iter().position(|&x| x == cur)?;
+        match order.get(pos + 1).copied() {
+            Some(i) => Some(i),
+            None if mode == PlaybackMode::RepeatAll => {
+                // Pass complete: reshuffle, but never lead the new pass with
+                // the track that just finished.
+                let mut fresh = Self::build_shuffle_order(queue_len, None);
+                if queue_len > 1 && fresh[0] == cur {
+                    fresh.swap(0, 1);
+                }
+                let first = fresh[0];
+                st.order = Some(fresh);
+                Some(first)
+            }
+            None => None,
+        }
+    }
+
+    /// Previous queue index under shuffle (mirror of [`Self::shuffled_next`]).
+    /// Never rebuilds the walk — with no walk there is no history to walk
+    /// back through, so callers fall back to the sequential `cur - 1`.
+    fn shuffled_prev(
+        st: &Arc<Mutex<ShuffleState>>,
+        mode: PlaybackMode,
+        queue_len: usize,
+        cur: usize,
+    ) -> Option<usize> {
+        let st = st.lock().ok()?;
+        if !st.enabled || queue_len == 0 {
+            return None;
+        }
+        let order = st.order.as_ref()?;
+        if order.len() != queue_len || !order.contains(&cur) {
+            return None;
+        }
+        let pos = order.iter().position(|&x| x == cur)?;
+        match pos.checked_sub(1).and_then(|p| order.get(p).copied()) {
+            Some(i) => Some(i),
+            None if mode == PlaybackMode::RepeatAll && queue_len > 1 => order.last().copied(),
+            None => None,
+        }
     }
 
     /// Force output stream recreation on next start_playback() (e.g. for device switch).
@@ -1825,7 +1950,10 @@ impl PlaybackEngine {
 
     pub fn next(&self) {
         if let Ok(mut idx) = self.current_queue_index.lock() {
-            *idx += 1;
+            let cur = *idx;
+            let mode = self.get_playback_mode();
+            let len = self.play_queue.lock().map(|q| q.len()).unwrap_or(0);
+            *idx = Self::shuffled_next(&self.shuffle_state, mode, len, cur).unwrap_or(cur + 1);
         }
 
         // If engine is stopped, start playback directly
@@ -1846,7 +1974,10 @@ impl PlaybackEngine {
     pub fn previous(&self) {
         if let Ok(mut idx) = self.current_queue_index.lock() {
             if *idx > 0 {
-                *idx -= 1;
+                let cur = *idx;
+                let mode = self.get_playback_mode();
+                let len = self.play_queue.lock().map(|q| q.len()).unwrap_or(0);
+                *idx = Self::shuffled_prev(&self.shuffle_state, mode, len, cur).unwrap_or(cur - 1);
             }
         }
 
@@ -2069,6 +2200,7 @@ impl PlaybackEngine {
         let speed_changed = self.speed_changed.clone();
         let output_running = self.output_running.clone();
         let playback_mode = self.playback_mode.clone();
+        let shuffle = self.shuffle_state.clone();
         let generation = self.decode_generation.clone();
         let quality = self.config.lock().unwrap().resampler_quality;
         let time_stretch_factory = self.get_time_stretch_factory();
@@ -2099,6 +2231,7 @@ impl PlaybackEngine {
                         speed_changed,
                         output_running,
                         playback_mode,
+                        shuffle,
                         generation,
                         quality,
                         time_stretch_factory,
@@ -2172,11 +2305,21 @@ impl PlaybackEngine {
         speed_changed: Arc<AtomicBool>,
         output_running: Arc<AtomicBool>,
         playback_mode: Arc<Mutex<PlaybackMode>>,
+        shuffle: Arc<Mutex<ShuffleState>>,
         generation: Arc<AtomicU64>,
         quality: ResamplerQuality,
         time_stretch_factory: Option<TimeStretchFactory>,
     ) {
         let my_gen = generation.load(Ordering::SeqCst);
+
+        // Advance to the next queue index, honoring shuffle when enabled.
+        // The sequential `cur + 1` fallback keeps the original end-of-queue
+        // handling (RepeatAll restart / Normal stop) untouched.
+        let advance_to_next = |cur: usize| -> usize {
+            let mode = *playback_mode.lock().unwrap();
+            let len = queue.lock().map(|q| q.len()).unwrap_or(0);
+            Self::shuffled_next(&shuffle, mode, len, cur).unwrap_or(cur + 1)
+        };
         let mut current: Option<QueuedTrack> = None;
 
         loop {
@@ -2316,7 +2459,9 @@ impl PlaybackEngine {
                     if success {
                         let mode = *playback_mode.lock().unwrap();
                         if mode != PlaybackMode::RepeatOne {
-                            *queue_idx.lock().unwrap() += 1;
+                            let cur = *queue_idx.lock().unwrap();
+                            let next = advance_to_next(cur);
+                            *queue_idx.lock().unwrap() = next;
                         }
                     }
                     // For RepeatOne: fall through to loop top — current still holds
@@ -2392,7 +2537,9 @@ impl PlaybackEngine {
                     Err(e) => {
                         log::error!("Failed to open DSD file {}: {}", track.path, e);
                         *tracks_played.lock().unwrap() += 1;
-                        *queue_idx.lock().unwrap() += 1;
+                        let cur = *queue_idx.lock().unwrap();
+                        let next = advance_to_next(cur);
+                        *queue_idx.lock().unwrap() = next;
                         current = None;
                         continue;
                     }
@@ -2433,7 +2580,9 @@ impl PlaybackEngine {
                             continue;
                         }
                         PlaybackMode::Normal | PlaybackMode::RepeatAll => {
-                            *queue_idx.lock().unwrap() += 1;
+                            let cur = *queue_idx.lock().unwrap();
+                            let next = advance_to_next(cur);
+                            *queue_idx.lock().unwrap() = next;
                         }
                     }
                 } else if skip.load(Ordering::SeqCst) {
@@ -2441,7 +2590,9 @@ impl PlaybackEngine {
                     skip.store(false, Ordering::SeqCst);
                 } else {
                     log::error!("DSD decode failed, skipping to next track");
-                    *queue_idx.lock().unwrap() += 1;
+                    let cur = *queue_idx.lock().unwrap();
+                    let next = advance_to_next(cur);
+                    *queue_idx.lock().unwrap() = next;
                 }
                 continue;
             }
@@ -2608,7 +2759,9 @@ impl PlaybackEngine {
                         continue;
                     }
                     PlaybackMode::Normal | PlaybackMode::RepeatAll => {
-                        *queue_idx.lock().unwrap() += 1;
+                        let cur = *queue_idx.lock().unwrap();
+                        let next = advance_to_next(cur);
+                        *queue_idx.lock().unwrap() = next;
                     }
                 }
             } else if skip.load(Ordering::SeqCst) {
@@ -2618,7 +2771,9 @@ impl PlaybackEngine {
             } else if !skip.load(Ordering::SeqCst) {
                 // Decode error (not stop/skip) — skip this broken track
                 log::error!("Decode failed, skipping to next track");
-                *queue_idx.lock().unwrap() += 1;
+                let cur = *queue_idx.lock().unwrap();
+                let next = advance_to_next(cur);
+                *queue_idx.lock().unwrap() = next;
             }
         }
 
@@ -3966,4 +4121,110 @@ pub enum EngineError {
     Decode(String),
     #[error("Invalid state: {0}")]
     InvalidState(String),
+}
+
+#[cfg(test)]
+mod shuffle_tests {
+    use super::*;
+
+    fn state(enabled: bool) -> Arc<Mutex<ShuffleState>> {
+        Arc::new(Mutex::new(ShuffleState { enabled, order: None }))
+    }
+
+    #[test]
+    fn build_order_is_permutation() {
+        for len in [1usize, 2, 5, 50] {
+            let mut o = PlaybackEngine::build_shuffle_order(len, None);
+            o.sort_unstable();
+            assert_eq!(o, (0..len).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn build_order_anchors_head() {
+        let o = PlaybackEngine::build_shuffle_order(10, Some(7));
+        assert_eq!(o[0], 7);
+        let mut sorted = o;
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn walk_covers_all_then_stops() {
+        let st = state(true);
+        let mut visited = vec![0usize];
+        let mut cur = 0usize;
+        for _ in 0..9 {
+            cur = PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 10, cur)
+                .expect("walk continues within one pass");
+            visited.push(cur);
+        }
+        visited.sort_unstable();
+        assert_eq!(visited, (0..10).collect::<Vec<_>>());
+        assert_eq!(
+            PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 10, cur),
+            None,
+            "Normal mode stops after the pass completes"
+        );
+    }
+
+    #[test]
+    fn repeat_all_reshuffle_never_leads_with_finished_track() {
+        let st = state(true);
+        let mut cur = 0usize;
+        for _ in 0..2 {
+            cur = PlaybackEngine::shuffled_next(&st, PlaybackMode::RepeatAll, 3, cur).unwrap();
+        }
+        // Walk is exhausted here: RepeatAll must reshuffle and must not
+        // replay the track that just finished.
+        let next = PlaybackEngine::shuffled_next(&st, PlaybackMode::RepeatAll, 3, cur)
+            .expect("RepeatAll reshuffles");
+        assert_ne!(next, cur);
+        let order = st.lock().unwrap().order.clone().unwrap();
+        let mut sorted = order;
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..3).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn disabled_returns_none() {
+        let st = state(false);
+        assert_eq!(PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 5, 0), None);
+        assert_eq!(PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 5, 2), None);
+    }
+
+    #[test]
+    fn queue_resize_rebuilds_walk() {
+        let st = state(true);
+        // Prime an order for a 4-track queue, then pretend the queue shrank.
+        PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 4, 0).unwrap();
+        assert_eq!(st.lock().unwrap().order.as_ref().unwrap().len(), 4);
+
+        let next = PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 2, 1)
+            .expect("stale walk rebuilds");
+        let order = st.lock().unwrap().order.clone().unwrap();
+        assert_eq!(order.len(), 2);
+        assert_eq!(order[0], 1, "rebuild anchors the current track at head");
+        assert_eq!(Some(next), order.get(1).copied());
+    }
+
+    #[test]
+    fn prev_mirrors_next() {
+        let st = state(true);
+        let a = PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 6, 2).unwrap();
+        let b = PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 6, a).unwrap();
+        assert_eq!(PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 6, b), Some(a));
+    }
+
+    #[test]
+    fn prev_at_walk_start_wraps_only_in_repeat_all() {
+        let st = state(true);
+        PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 4, 1).unwrap();
+        // cur=1 anchors at head → pos 0, no previous.
+        assert_eq!(
+            PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 4, 1),
+            None
+        );
+        assert!(PlaybackEngine::shuffled_prev(&st, PlaybackMode::RepeatAll, 4, 1).is_some());
+    }
 }

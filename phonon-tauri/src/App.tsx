@@ -15,6 +15,7 @@ import Settings from './components/Settings'
 import TitleBar from './components/TitleBar'
 import LyricsPage from './components/LyricsPage'
 import VisualizerPage from './components/VisualizerPage'
+import LibraryPage from './components/LibraryPage'
 import VisModeButton, { type VisMode } from './components/VisModeButton'
 import { syncVisPluginStyles, startVisLoop, stopVisLoop } from './api/visModeHost'
 // three.js/R3F stack is only needed on the Depth3D tab — keep it out of the
@@ -85,7 +86,7 @@ function safeGetCurrentWindow(): ReturnType<typeof getCurrentWindow> | null {
   try { return getCurrentWindow() } catch { return null }
 }
 
-type Tab = 'player' | 'devices' | 'dsp' | 'extensions' | 'settings' | 'visualizer' | 'depth3d'
+type Tab = 'player' | 'library' | 'devices' | 'dsp' | 'extensions' | 'settings' | 'visualizer' | 'depth3d'
 
 interface PlaybackState {
   state: string
@@ -240,7 +241,7 @@ function App() {
   //     调用方需用独立的 waitForFunction/waitForTimeout 轮询 DOM。
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
-    const allowed: Tab[] = ['player', 'devices', 'dsp', 'extensions', 'settings']
+    const allowed: Tab[] = ['player', 'library', 'devices', 'dsp', 'extensions', 'settings']
     // @ts-expect-error - test-only global
     window.__phononTestSetActiveTab = (tab: Tab): boolean => {
       if (!allowed.includes(tab)) return false
@@ -394,6 +395,11 @@ function App() {
   const setPlaybackMode = (mode: string) => {
     setPlaybackModeState(mode)
     localStorage.setItem('phonon-playback-mode', mode)
+  }
+  const [shuffleOn, setShuffleOnState] = useState<boolean>(() => localStorage.getItem('phonon-shuffle') === '1')
+  const setShuffleOn = (on: boolean) => {
+    setShuffleOnState(on)
+    localStorage.setItem('phonon-shuffle', on ? '1' : '0')
   }
   const [refreshKey, setRefreshKey] = useState(0)
 
@@ -850,6 +856,14 @@ function App() {
               const mode = await invoke<string>('get_playback_mode')
               setPlaybackModeState(mode)
               localStorage.setItem('phonon-playback-mode', mode)
+            }
+          } catch {}
+
+          // Shuffle — same localStorage-first policy as playback mode.
+          try {
+            const savedShuffle = localStorage.getItem('phonon-shuffle')
+            if (savedShuffle !== null) {
+              await invoke('set_shuffle', { enabled: savedShuffle === '1' })
             }
           } catch {}
 
@@ -1692,6 +1706,7 @@ function App() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'player', label: t('tab.player') },
+    { id: 'library', label: t('tab.library') },
     { id: 'devices', label: t('tab.devices') },
     { id: 'dsp', label: t('tab.dsp') },
     { id: 'extensions', label: t('tab.extensions') },
@@ -1775,6 +1790,14 @@ function App() {
             playerMainRef={playerMainRef}
           />
         )}
+        {activeTab === 'library' && (
+          <LibraryPage
+            addToast={addToast}
+            onNavigate={(tab) => setActiveTab(tab as Tab)}
+            currentTrackPath={playback.current_track}
+            onPlaybackChange={triggerRefresh}
+          />
+        )}
         {activeTab === 'devices' && <DeviceSelector />}
         {activeTab === 'dsp' && <DspPanel onNavigate={(tab) => setActiveTab(tab as Tab)} colorScheme={spectrumColorScheme} customColors={customSpectrumColors} addToast={addToast} />}
         {activeTab === 'extensions' && <ExtensionsPanel addToast={addToast} onNavigate={(tab) => setActiveTab(tab)} />}
@@ -1789,7 +1812,7 @@ function App() {
       </div>
 
       {/* Draggable split bar between content and player bar */}
-      <PlayerBar playback={playback} onUpdate={refreshPlayback} volume={volume} onVolumeChange={handleVolume} volumeMode={volumeMode} onVolumeModeChange={setVolumeMode} playbackMode={playbackMode} setPlaybackMode={setPlaybackMode} addToast={addToast} coverUrl={coverUrl} onOpenLyrics={() => setShowLyricsPage(true)} onToggleDesktopLyrics={() => setDesktopLyricsOpen(!desktopLyricsOpen)} desktopLyricsOpen={desktopLyricsOpen} />
+      <PlayerBar playback={playback} onUpdate={refreshPlayback} volume={volume} onVolumeChange={handleVolume} volumeMode={volumeMode} onVolumeModeChange={setVolumeMode} playbackMode={playbackMode} setPlaybackMode={setPlaybackMode} shuffleOn={shuffleOn} setShuffleOn={setShuffleOn} addToast={addToast} coverUrl={coverUrl} onOpenLyrics={() => setShowLyricsPage(true)} onToggleDesktopLyrics={() => setDesktopLyricsOpen(!desktopLyricsOpen)} desktopLyricsOpen={desktopLyricsOpen} />
     </div>
 
     {/* ── EULA 首次启动弹窗（§14 合规） ─────────────────────── */}
@@ -1988,6 +2011,8 @@ interface PlayerBarProps {
   onVolumeModeChange: (mode: string) => void
   playbackMode: string
   setPlaybackMode: (mode: string) => void
+  shuffleOn: boolean
+  setShuffleOn: (on: boolean) => void
   addToast: (message: string, kind?: 'info' | 'warn' | 'error') => void
   coverUrl: string | null
   onOpenLyrics: () => void
@@ -2004,6 +2029,8 @@ function PlayerBar({
   onVolumeModeChange,
   playbackMode,
   setPlaybackMode,
+  shuffleOn,
+  setShuffleOn,
   addToast,
   coverUrl,
   onOpenLyrics,
@@ -2020,7 +2047,6 @@ function PlayerBar({
   const seekLockRef = useRef(false)
   const [dragging, setDragging] = useState(false)
   const [showSpeedList, setShowSpeedList] = useState(false)
-  const modeDebounceRef = useRef(0)
   const skipDebounceRef = useRef(0)
 
   // Close speed list on outside click
@@ -2030,6 +2056,15 @@ function PlayerBar({
     document.addEventListener('click', handler)
     return () => document.removeEventListener('click', handler)
   }, [showSpeedList])
+  const [showModeMenu, setShowModeMenu] = useState(false)
+
+  // Close mode menu on outside click
+  useEffect(() => {
+    if (!showModeMenu) return
+    const handler = () => setShowModeMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showModeMenu])
   const [tooltipTime, setTooltipTime] = useState('')
   const durationRef = useRef(playback.duration_secs)
   durationRef.current = progress.duration ?? playback.duration_secs
@@ -2302,41 +2337,78 @@ function PlayerBar({
           </div>
         </div>
 
-        {/* Playback mode — single button that cycles through modes on click */}
-        <div className="mode-buttons">
+        {/* Playback mode + shuffle — one button, dropdown menu */}
+        <div className="mode-buttons" style={{ position: 'relative' }}>
           <button
-            className="mode-btn"
-            onClick={() => {
-              const now = Date.now()
-              if (now - modeDebounceRef.current < 300) return
-              modeDebounceRef.current = now
-              const modes = ['normal', 'repeat_all', 'repeat_one'];
-              const labels: Record<string, string> = {
-                normal: t('player.mode.sequential.desc'),
-                repeat_all: t('player.mode.repeatAll.desc'),
-                repeat_one: t('player.mode.repeatOne.desc'),
-              };
-              const currentIndex = modes.indexOf(playbackMode);
-              const nextIndex = (currentIndex + 1) % modes.length;
-              const nextMode = modes[nextIndex];
-              invoke('set_playback_mode', { mode: nextMode })
-                .then(() => {
-                  setPlaybackMode(nextMode);
-                  addToast(labels[nextMode]);
-                })
-                .catch((e) => {
-                  console.error('Failed to set playback mode:', e);
-                  addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
-                });
-            }}
-            title={
-              playbackMode === 'normal' ? t('player.mode.sequential.desc') :
-              playbackMode === 'repeat_all' ? t('player.mode.repeatAll.desc') :
-              t('player.mode.repeatOne.desc')
-            }
+            className={`mode-btn ${shuffleOn ? 'active' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setShowModeMenu(!showModeMenu) }}
+            title={t('player.mode.hint', '点击切换播放模式')}
           >
-            {modeIcon(playbackMode)}
+            {shuffleOn ? (
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
+              </svg>
+            ) : (
+              modeIcon(playbackMode)
+            )}
           </button>
+          {showModeMenu && (
+            <div style={{
+              position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+              marginBottom: 8, background: 'var(--bg-card)', border: '1px solid var(--border-glow)',
+              borderRadius: 'var(--radius)', padding: 4, zIndex: 200,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: 2,
+              minWidth: 150, whiteSpace: 'nowrap',
+            }}>
+              {([
+                ['normal', t('player.mode.sequential.desc')],
+                ['repeat_all', t('player.mode.repeatAll.desc')],
+                ['repeat_one', t('player.mode.repeatOne.desc')],
+              ] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  className="btn btn-sm btn-ghost"
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, color: 'inherit' }}
+                  onClick={() => {
+                    invoke('set_playback_mode', { mode: m })
+                      .then(() => {
+                        setPlaybackMode(m)
+                        addToast(label)
+                        setShowModeMenu(false)
+                      })
+                      .catch((e) => {
+                        console.error('Failed to set playback mode:', e);
+                        addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
+                      });
+                  }}
+                >
+                  <span>{label}</span>
+                  {playbackMode === m && <span style={{ color: 'var(--accent)' }}>✓</span>}
+                </button>
+              ))}
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 6px' }} />
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, color: 'inherit' }}
+                onClick={() => {
+                  const next = !shuffleOn
+                  invoke('set_shuffle', { enabled: next })
+                    .then(() => {
+                      setShuffleOn(next)
+                      addToast(next ? t('player.shuffle.on', 'Shuffle on') : t('player.shuffle.off', 'Shuffle off'))
+                      setShowModeMenu(false)
+                    })
+                    .catch((e) => {
+                      console.error('Failed to set shuffle:', e);
+                      addToast(t('toast.modeSwitchFailed', 'Mode switch failed'), 'error');
+                    });
+                }}
+              >
+                <span>{t('player.shuffle.desc', 'Shuffle')}</span>
+                {shuffleOn && <span style={{ color: 'var(--accent)' }}>✓</span>}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Speed control */}
