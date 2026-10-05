@@ -185,6 +185,12 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
     }
   }, [displayTracks, addToast, onPlaybackChange])
 
+  // 播放全部：与双击同一条上下文播放路径，从当前视图第一首开始。
+  const handlePlayAll = useCallback(() => {
+    const first = displayTracks.find((tr) => tr.file_path)
+    if (first) void handlePlayTrack(first.id)
+  }, [displayTracks, handlePlayTrack])
+
   // ── §5.8.2 add-roots modal ─────────────────────────────────
   const [askPlaylist, setAskPlaylist] = useState<{ folderPath: string } | null>(null)
   const onAskCreateSyncPlaylist = (folderPath: string) => setAskPlaylist({ folderPath })
@@ -269,7 +275,7 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
           <span style={{ fontWeight: 600 }}>{top.title}</span>
         </div>
       ) : (
-        <div className="library-subtabs" style={{ display: 'flex', gap: 4, padding: '4px 12px', borderBottom: '1px solid var(--border, rgba(128,128,128,0.2))' }}>
+        <div className="library-subtabs" style={{ display: 'flex', gap: 4, padding: '4px 12px', borderBottom: '1px solid var(--border, rgba(128,128,128,0.2))', alignItems: 'center' }}>
           {subTabs.map((st) => (
             <button
               key={st.id}
@@ -279,6 +285,18 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
               {st.label}
             </button>
           ))}
+          {/* 播放全部：列表类子页（全部/收藏/最近）一键整表入队连播，
+              上下文与双击一致；网格类子页（专辑/艺术家/流派）不放。 */}
+          {(subTab === 'all' || subTab === 'favorites' || subTab === 'recent') && (
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ marginLeft: 'auto' }}
+              disabled={displayTracks.length === 0}
+              onClick={handlePlayAll}
+            >
+              {'\u25B6'} {t('library.playAll', 'Play All')}
+            </button>
+          )}
         </div>
       )}
 
