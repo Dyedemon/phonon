@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
+import { featuresStaleMs } from './audioBridge'
 import type { SmoothedAudioData } from './audioBridge'
 
 interface Props {
@@ -85,6 +86,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const startTimeRef = useRef(0)
   const initFadeRef = useRef(0) // 启动淡入：0→1，约 1.1 秒
   const ringWaveRef = useRef(1) // 环带节拍波进度：1 = 空闲，beat 时归 0
+  const orbitSpeedRef = useRef(0) // 星云粒子环公转速度：向目标平滑加减速
 
   // ─── 行星表面 shader ─── 分层地形 + 海洋高光 + 黄昏带 + 极光 + 火山 + 城市光
   // （噪声八度已按性能预算削减；"云影"目前是标量近似，真采样待烘焙包）
@@ -531,9 +533,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vColor = color;
         // uSpeed：低频/响度驱动环的公转速度，节拍瞬间再踢一脚——
         // 音乐的"推进感"主要靠这个通道
-        // 系数 2.0：播放时绕球公转（中速 ~67s 一圈，重低音 ~38s）。
+        // 系数 1.0：播放时绕球公转（用户要求减半）。
         // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
-        float angSpeed = speed / sqrt(radius) * 2.0 * uSpeed;
+        float angSpeed = speed / sqrt(radius) * 1.0 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
         vec3 pos = vec3(
@@ -772,8 +774,13 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
       mat.uniforms.uLow.value = low
-      // 无常速基底：暂停时 uSpeed = 0，粒子环冻结
-      mat.uniforms.uSpeed.value = low * 3.0 + rms * 2.0
+      // 公转速度：目标 = 播放能量；音频特征停止推送（暂停/停止）超过 0.6s
+      // 视为目标 0。实际速度向目标平滑靠拢——歌曲停了缓缓减速直至静止
+      const targetSpeed = featuresStaleMs() < 600 ? low * 3.0 + rms * 2.0 : 0
+      orbitSpeedRef.current = targetSpeed > orbitSpeedRef.current
+        ? Math.min(targetSpeed, orbitSpeedRef.current + delta * 1.2)
+        : Math.max(targetSpeed, orbitSpeedRef.current - delta * 0.6)
+      mat.uniforms.uSpeed.value = orbitSpeedRef.current
       mat.uniforms.uPulse.value = pulse
       mat.uniforms.uPixelRatio.value = dpr
     }

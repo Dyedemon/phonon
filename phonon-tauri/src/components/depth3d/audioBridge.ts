@@ -88,6 +88,14 @@ function safeVal(v: number, min = 0, max = 1): number {
   return Math.min(max, Math.max(min, v))
 }
 
+let lastFeatureAt = 0
+
+/** 距离最后一次 audio-features 事件过去了多少毫秒（暂停/停止后不再推送，
+ *  消费方可据此把视觉响应降为 0，避免能量值冻结导致动画永不停） */
+export function featuresStaleMs(): number {
+  return performance.now() - lastFeatureAt
+}
+
 /**
  * 单通道订阅：返回一个可变 ref，每当主窗口 push audio-features 事件时
  * ref 内容就地更新（不是返回新对象）。场景里每帧读 ref.current 做 lerp。
@@ -98,6 +106,7 @@ export function useAudioDataRef() {
 
   useEffect(() => {
     const handler = (e: Event) => {
+      lastFeatureAt = performance.now()
       const custom = e as CustomEvent<AudioFeatures>
       const f = custom.detail
       if (!f) return
