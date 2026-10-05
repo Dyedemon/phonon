@@ -15,8 +15,8 @@ import AlbumDetailPage from './library/AlbumDetailPage'
 import MetadataEditModal from './library/MetadataEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
 import { getRoots, getTracks, listAlbums, listArtists } from '../api/library'
-import { addToQueue, getQueue } from '../api/queue'
-import { play, playIndex } from '../api/player'
+import { addToQueue, clearQueue } from '../api/queue'
+import { playIndex } from '../api/player'
 
 export type LibrarySubTab =
   | 'all'
@@ -127,24 +127,6 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   }
 
   // ── Playback callbacks ──────────────────────────────────────
-  const handlePlayTrack = useCallback(async (trackId: number) => {
-    const track = tracks.find((tr) => tr.id === trackId)
-    if (!track?.file_path) return
-    try {
-      // 保留现有队列：追加到尾部并跳播这首。此前这里 clearQueue 会把
-      // 用户排好的队列无声替换掉（142 首 → 1 首的事故根源）。
-      // 引擎对已在队列中的曲目去重，findIndex 会命中原位置 → 跳回它。
-      await addToQueue([track.file_path])
-      const queue = await getQueue()
-      const idx = queue.findIndex((q) => q.path === track.file_path)
-      if (idx >= 0) await playIndex(idx)
-      else await play()
-      onPlaybackChange?.()
-    } catch (e) {
-      addToast?.(String(e), 'error')
-    }
-  }, [tracks, addToast, onPlaybackChange])
-
   const handleAddToQueue = useCallback(async (trackId: number) => {
     const track = tracks.find((tr) => tr.id === trackId)
     if (!track?.file_path) return
@@ -182,6 +164,24 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
     }
     return list
   }, [tracks, subTab, searchQuery])
+
+  // 双击播放 = 上下文播放（Spotify/foobar 惯例）：以当前视图（含子 tab
+  // 和搜索过滤）的全部曲目替换队列，从双击的那首开始连播。这样既不会
+  // 出现"队列只剩孤零零一首"，也修复了旧版 clearQueue+单曲导致队列被
+  // 无声清空的问题。想把单曲插进现有队列请用右键"加入队列"。
+  const handlePlayTrack = useCallback(async (trackId: number) => {
+    const playable = displayTracks.filter((tr) => tr.file_path)
+    const pos = playable.findIndex((tr) => tr.id === trackId)
+    if (pos < 0) return
+    try {
+      await clearQueue()
+      await addToQueue(playable.map((tr) => tr.file_path))
+      await playIndex(pos)
+      onPlaybackChange?.()
+    } catch (e) {
+      addToast?.(String(e), 'error')
+    }
+  }, [displayTracks, addToast, onPlaybackChange])
 
   // ── §5.8.2 add-roots modal ─────────────────────────────────
   const [askPlaylist, setAskPlaylist] = useState<{ folderPath: string } | null>(null)
