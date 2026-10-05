@@ -377,7 +377,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
     uniforms: {
       uTime: { value: 0 },
       uLow: { value: 0 },
-      uPulse: { value: 0 },
       uWave: { value: 1 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
@@ -393,7 +392,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
     fragmentShader: /* glsl */`
       uniform float uTime;
       uniform float uLow;
-      uniform float uPulse;
       uniform float uWave;
       uniform vec3 uLightDir;
       varying vec2 vUv;
@@ -511,7 +509,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uTime: { value: 0 },
       uIntensity: { value: 0.5 },
       uLow: { value: 0 },
-      uPulse: { value: 0 },
       uSpeed: { value: 1 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
     },
@@ -523,7 +520,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       attribute float angle;
       uniform float uTime;
       uniform float uIntensity;
-      uniform float uPulse;
       uniform float uSpeed;
       uniform float uPixelRatio;
       varying vec3 vColor;
@@ -533,9 +529,9 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vColor = color;
         // uSpeed：低频/响度驱动环的公转速度，节拍瞬间再踢一脚——
         // 音乐的"推进感"主要靠这个通道
-        // 系数 2.7：播放时明显绕球公转（中速 ~60s 一圈，重低音加速到 ~25s）
-        // 0.08 时一圈要几十分钟，等于静止（与小行星带当年同款问题）
-        float angSpeed = speed / sqrt(radius) * 2.7 * uSpeed;
+        // 系数 2.0：播放时绕球公转（中速 ~67s 一圈，重低音 ~38s）。
+        // uSpeed 只由播放能量驱动（无常速基底）——暂停时为 0，完全静止
+        float angSpeed = speed / sqrt(radius) * 2.0 * uSpeed;
         float currentAngle = angle + uTime * angSpeed;
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08;
         vec3 pos = vec3(
@@ -548,7 +544,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float ps = size * uIntensity * 170.0 * uPixelRatio / -mvPosition.z;
         float clamped = clamp(ps, 1.5, 10.0 * uPixelRatio);
         gl_PointSize = clamped;
-        vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
+        vAlpha = uIntensity * (0.28 + speed * 0.35) * min(ps / clamped, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -761,7 +757,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       const mat = planetRingRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
-      mat.uniforms.uPulse.value = pulse
       ringWaveRef.current = Math.min(1, ringWaveRef.current + delta / 1.2)
       mat.uniforms.uWave.value = ringWaveRef.current
     }
@@ -775,8 +770,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uTime.value = t
       mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
       mat.uniforms.uLow.value = low
-      mat.uniforms.uPulse.value = pulse
-      mat.uniforms.uSpeed.value = 1 + low * 1.2 + rms * 0.8 + pulse * 1.5
+      // 无常速基底：暂停时 uSpeed = 0，粒子环冻结
+      mat.uniforms.uSpeed.value = low * 3.0 + rms * 2.0
       mat.uniforms.uPixelRatio.value = dpr
     }
 
