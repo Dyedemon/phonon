@@ -15,8 +15,8 @@ import AlbumDetailPage from './library/AlbumDetailPage'
 import MetadataEditModal from './library/MetadataEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
 import { getRoots, getTracks, listAlbums, listArtists } from '../api/library'
-import { addToQueue, clearQueue } from '../api/queue'
-import { play } from '../api/player'
+import { addToQueue, getQueue } from '../api/queue'
+import { play, playIndex } from '../api/player'
 
 export type LibrarySubTab =
   | 'all'
@@ -131,9 +131,14 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
     const track = tracks.find((tr) => tr.id === trackId)
     if (!track?.file_path) return
     try {
-      await clearQueue()
+      // 保留现有队列：追加到尾部并跳播这首。此前这里 clearQueue 会把
+      // 用户排好的队列无声替换掉（142 首 → 1 首的事故根源）。
+      // 引擎对已在队列中的曲目去重，findIndex 会命中原位置 → 跳回它。
       await addToQueue([track.file_path])
-      await play()
+      const queue = await getQueue()
+      const idx = queue.findIndex((q) => q.path === track.file_path)
+      if (idx >= 0) await playIndex(idx)
+      else await play()
       onPlaybackChange?.()
     } catch (e) {
       addToast?.(String(e), 'error')
