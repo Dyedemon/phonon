@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-08-29
 
 ### Added
-- 完整的音频播放引擎，支持 WASAPI 独占模式、ASIO、DSD (DoP) 输出
+- 完整的音频播放引擎，支持 WASAPI 独占模式、DSD (DoP / 原生 DSD 直通) 输出
 - 可插拔 DSP 链路架构，支持 EQ、环绕声、重低音、限幅器等效果
 - WebAssembly 插件系统（内置 DSP 效果 / 外部扩展插件）
 - 桌面歌词窗口，支持翻译行和双语显示

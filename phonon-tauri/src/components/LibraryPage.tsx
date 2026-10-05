@@ -12,6 +12,7 @@ import TrackTable from './library/TrackTable'
 import AlbumGrid from './library/AlbumGrid'
 import ArtistGenreList from './library/ArtistGenreList'
 import AlbumDetailPage from './library/AlbumDetailPage'
+import MetadataEditModal from './library/MetadataEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
 import { getRoots, getTracks, listAlbums, listArtists } from '../api/library'
 import { addToQueue, clearQueue } from '../api/queue'
@@ -84,6 +85,7 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   const [albums, setAlbums] = useState<AlbumInfo[]>([])
   const [artists, setArtists] = useState<ArtistInfo[]>([])
   const [hasRoots, setHasRoots] = useState<boolean | null>(null)
+  const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
 
   // Fetch tracks + albums + artists on mount and when retryKey changes.
   useEffect(() => {
@@ -213,7 +215,15 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
     currentlyPlayingId,
     onPlayTrack: handlePlayTrack,
     onAddToQueue: handleAddToQueue,
+    onEditMetadata: (trackId: number) => setEditingTrackId(trackId),
   }
+
+  // Optimistically apply a metadata save to the in-memory track list, then
+  // let other views (album grid aggregates etc.) refresh via the event.
+  const handleMetadataSaved = useCallback((updated: import('../api/library').LibraryTrack) => {
+    setTracks((arr) => arr.map((tr) => (tr.id === updated.id ? updated : tr)))
+    window.dispatchEvent(new CustomEvent('library-changed'))
+  }, [])
 
   return (
     <div className="library-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -298,6 +308,16 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
           )}
         </LibraryErrorBoundary>
       </div>
+
+      {/* Metadata edit modal — opened from TrackTable's context menu */}
+      {editingTrackId !== null && (
+        <MetadataEditModal
+          trackId={editingTrackId}
+          onClose={() => setEditingTrackId(null)}
+          onSaved={handleMetadataSaved}
+          addToast={addToast}
+        />
+      )}
 
       {/* §5.8.2 add-roots modal — "要不要同时创建同步歌单？" */}
       {askPlaylist && (

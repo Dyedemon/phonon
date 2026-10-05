@@ -1391,6 +1391,8 @@ pub fn run() {
             commands::get_playback_speed,
             commands::set_playback_mode,
             commands::get_playback_mode,
+            commands::set_shuffle,
+            commands::get_shuffle,
             // Device
             commands::list_devices,
             commands::set_device,
@@ -1614,6 +1616,15 @@ pub fn run() {
                 } else {
                     log::info!("Plugin directory set to: {:?}", plugins_dir);
                 }
+                // ── Restore persisted library roots ─────────────────
+                // set_roots persists them; without this restore the media
+                // library view comes back empty after every restart.
+                let roots = commands::load_persisted_library_roots();
+                if !roots.is_empty() {
+                    log::info!("Restored {} library root(s)", roots.len());
+                    *state.library_roots.lock().unwrap() = roots;
+                }
+
                 // In dev mode, also scan the project's plugins/ folder so
                 // plugins built alongside the source tree are auto-discovered.
                 #[cfg(debug_assertions)]

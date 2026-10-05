@@ -143,12 +143,15 @@ pub struct TrackFilter {
     /// Limit to tracks in this folder (by id, recursive).
     pub folder_id: Option<i64>,
     /// Limit to favorites only.
+    #[serde(default)]
     pub favorites_only: bool,
     /// Only include tracks that have been played at least once (play_count > 0).
+    #[serde(default)]
     pub played_only: bool,
     /// Minimum rating (1..=5). None = no rating filter.
     pub min_rating: Option<u8>,
     /// Include soft-deleted rows.
+    #[serde(default)]
     pub include_deleted: bool,
     /// Sort field.
     pub sort: Option<TrackSortField>,

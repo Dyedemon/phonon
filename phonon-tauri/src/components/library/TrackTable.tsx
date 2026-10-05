@@ -203,10 +203,7 @@ export default function TrackTable({
   subTab = 'all',
   onPlayTrack,
   onAddToQueue,
-  onAddToPlaylist,
   onEditMetadata,
-  onReplaceCover,
-  onRescanMetadata,
 }: TrackTableProps) {
   const { t } = useI18n()
   const [scrollTop, setScrollTop] = useState(0)
@@ -389,10 +386,7 @@ export default function TrackTable({
           onClose={() => setCtxMenu(null)}
           onPlay={onPlayTrack}
           onAddToQueue={onAddToQueue}
-          onAddToPlaylist={onAddToPlaylist}
           onEditMetadata={onEditMetadata}
-          onReplaceCover={onReplaceCover}
-          onRescanMetadata={onRescanMetadata}
         />
       )}
     </div>
@@ -411,29 +405,27 @@ interface ContextMenuProps {
   onClose: () => void
   onPlay?: (id: number) => void
   onAddToQueue?: (id: number) => void
-  onAddToPlaylist?: (id: number) => void
   onEditMetadata?: (id: number) => void
-  onReplaceCover?: (id: number) => void
-  onRescanMetadata?: (id: number) => void
 }
 
 function ContextMenu({
   x, y, trackId, t, onClose,
-  onPlay, onAddToQueue, onAddToPlaylist, onEditMetadata, onReplaceCover, onRescanMetadata,
+  onPlay, onAddToQueue, onEditMetadata,
 }: ContextMenuProps) {
   // Clamp to viewport so the menu doesn't get clipped off-screen.
   const cx = Math.min(x, window.innerWidth - 240)
   const cy = Math.min(y, window.innerHeight - 360)
-  const items: { label: string; action?: () => void; separatorAfter?: boolean }[] = [
+  // `disabled` = 前后端链路尚未接通的功能，灰显避免"点了没反应"。
+  const items: { label: string; action?: () => void; separatorAfter?: boolean; disabled?: boolean }[] = [
     { label: t('context.play', '播放'), action: () => onPlay?.(trackId) },
     { label: t('context.addToQueue', '加入队列'), action: () => onAddToQueue?.(trackId) },
-    { label: t('context.addToPlaylist', '加入歌单'), action: () => onAddToPlaylist?.(trackId) },
+    { label: t('context.addToPlaylist', '加入歌单'), disabled: true },
     { label: '★ ' + t('library.favorite'), action: () => { /* toggle handled inline */ } },
-    { label: '⭐ ' + t('library.rating'), separatorAfter: true /* submenu placeholder */ },
+    { label: '⭐ ' + t('library.rating'), separatorAfter: true, disabled: true /* submenu placeholder */ },
     { label: t('context.editMetadata', '编辑元数据') + ' ✎', action: () => onEditMetadata?.(trackId) },
-    { label: t('context.replaceCover', '替换封面'), action: () => onReplaceCover?.(trackId) },
-    { label: t('context.openFileLocation', '打开所在位置'), action: () => { /* would invoke shell open */ } },
-    { label: t('context.rescanMetadata', '重新扫描元数据'), action: () => onRescanMetadata?.(trackId) },
+    { label: t('context.replaceCover', '替换封面'), disabled: true },
+    { label: t('context.openFileLocation', '打开所在位置'), disabled: true /* needs opener plugin */ },
+    { label: t('context.rescanMetadata', '重新扫描元数据'), disabled: true /* no per-track rescan command yet */ },
   ]
   return (
     <div
@@ -454,10 +446,11 @@ function ContextMenu({
             style={{
               display: 'block', width: '100%', textAlign: 'left',
               background: 'transparent', color: 'inherit', border: 'none',
-              padding: '6px 12px', cursor: it.action ? 'pointer' : 'default', borderRadius: 4,
+              padding: '6px 12px', cursor: it.disabled ? 'default' : it.action ? 'pointer' : 'default',
+              borderRadius: 4, opacity: it.disabled ? 0.38 : 1,
             }}
-            onClick={() => { it.action?.(); onClose() }}
-            onMouseEnter={(e) => { if (it.action) e.currentTarget.style.background = 'rgba(128,128,128,0.2)' }}
+            onClick={() => { if (!it.disabled) it.action?.(); onClose() }}
+            onMouseEnter={(e) => { if (it.action && !it.disabled) e.currentTarget.style.background = 'rgba(128,128,128,0.2)' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
           >
             {it.label}

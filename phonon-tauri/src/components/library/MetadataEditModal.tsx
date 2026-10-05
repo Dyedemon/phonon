@@ -195,7 +195,7 @@ export default function MetadataEditModal({
     <div className="crop-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal-card" style={{ width: 'min(560px, 92vw)', maxHeight: '88vh', overflow: 'auto' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border, rgba(128,128,128,0.2))' }}>
-          <h3 style={{ margin: 0 }}>{t('library.subtab.albums', '编辑元数据')}</h3>
+          <h3 style={{ margin: 0 }}>{t('library.editMetadata.title', '编辑元数据')}</h3>
           <button className="btn-ghost" onClick={onClose}>×</button>
         </div>
 

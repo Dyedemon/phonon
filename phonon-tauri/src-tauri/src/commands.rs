@@ -453,6 +453,20 @@ pub fn get_playback_mode(state: State<'_, AppState>) -> Result<String, String> {
     Ok(s.to_string())
 }
 
+// ── Shuffle ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn set_shuffle(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    log::info!("Setting shuffle to {}", enabled);
+    state.engine.set_shuffle(enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_shuffle(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.engine.get_shuffle())
+}
+
 // ── Device Management ─────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -2204,6 +2218,7 @@ pub fn save_session(state: State<'_, AppState>) -> Result<(), String> {
         "position": position,
         "queue_index": queue_idx,
         "playback_mode": format!("{:?}", state.engine.get_playback_mode()),
+        "shuffle": state.engine.get_shuffle(),
         "sw_volume": state.volume.lock().unwrap().get_sw_level(),
         "hw_volume": state.volume.lock().unwrap().get_hw_level(),
         "active_playlist": state.active_playlist.lock().unwrap().clone(),
@@ -2557,6 +2572,11 @@ pub fn load_session(state: State<'_, AppState>) -> Result<(), String> {
         };
         state.engine.set_playback_mode(mode);
         log::info!("Playback mode restored from session: {:?}", mode);
+    }
+
+    // Restore shuffle from session (if saved)
+    if let Some(shuffle) = session.get("shuffle").and_then(|v| v.as_bool()) {
+        state.engine.set_shuffle(shuffle);
     }
 
     // Restore volume level from session (if saved)
@@ -4906,12 +4926,45 @@ fn with_library<R>(
 }
 
 /// Configure the library roots. Replaces any previously configured roots.
+/// Roots are persisted to <data_dir>/library_roots.json so the media
+/// library survives restarts — they used to live only in AppState memory,
+/// and every reboot silently emptied the library view.
 #[tauri::command]
 pub fn library_set_roots(state: State<'_, AppState>, roots: Vec<String>) -> Result<(), String> {
     let paths: Vec<std::path::PathBuf> = roots.into_iter().map(std::path::PathBuf::from).collect();
+    persist_library_roots(&paths)?;
     let mut guard = state.library_roots.lock().map_err(|e| e.to_string())?;
     *guard = paths;
     Ok(())
+}
+
+fn persist_library_roots(roots: &[std::path::PathBuf]) -> Result<(), String> {
+    let path = data_dir_pub().join("library_roots.json");
+    let json = serde_json::to_string_pretty(roots).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+/// Restore persisted library roots at startup. A missing file means the
+/// user never configured roots — an empty Vec is the correct state. A
+/// *corrupt* file must be loud, not silent: a silently-swallowed parse
+/// error empties the library view with no trace of why.
+pub fn load_persisted_library_roots() -> Vec<std::path::PathBuf> {
+    let path = data_dir_pub().join("library_roots.json");
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            log::warn!("Failed to read {}: {}", path.display(), e);
+            return Vec::new();
+        }
+    };
+    match serde_json::from_str(&raw) {
+        Ok(roots) => roots,
+        Err(e) => {
+            log::warn!("Corrupt {}: {} — ignoring library roots", path.display(), e);
+            Vec::new()
+        }
+    }
 }
 
 /// Get the currently configured library roots.
