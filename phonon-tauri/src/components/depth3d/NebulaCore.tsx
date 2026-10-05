@@ -379,6 +379,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     uniforms: {
       uTime: { value: 0 },
       uLow: { value: 0 },
+      uPulse: { value: 0 },
       uWave: { value: 1 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
     },
@@ -394,6 +395,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     fragmentShader: /* glsl */`
       uniform float uTime;
       uniform float uLow;
+      uniform float uPulse;
       uniform float uWave;
       uniform vec3 uLightDir;
       varying vec2 vUv;
@@ -761,6 +763,7 @@ vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped
       const mat = planetRingRef.current.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
+      mat.uniforms.uPulse.value = pulse
       ringWaveRef.current = Math.min(1, ringWaveRef.current + delta / 1.2)
       mat.uniforms.uWave.value = ringWaveRef.current
     }
