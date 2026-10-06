@@ -129,24 +129,24 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   }
 
   // ── Playback callbacks ──────────────────────────────────────
-  const handleAddToQueue = useCallback(async (trackId: number) => {
-    const track = tracks.find((tr) => tr.id === trackId)
-    if (!track?.file_path) return
+  const handleAddToQueue = useCallback(async (ids: number[]) => {
+    const paths = tracks.filter((tr) => ids.includes(tr.id)).map((tr) => tr.file_path).filter(Boolean)
+    if (paths.length === 0) return
     try {
-      await addToQueue([track.file_path])
-      addToast?.(t('toast.addedToQueue', '已添加到播放队列'), 'info')
+      await addToQueue(paths)
+      addToast?.(t('toast.addedToQueue', '已添加到播放队列') + (paths.length > 1 ? ` (${paths.length})` : ''), 'info')
     } catch (e) {
       addToast?.(String(e), 'error')
     }
   }, [tracks, addToast, t])
 
   // 下一首播放：插到当前曲之后，不打断正在播的歌。
-  const handlePlayNext = useCallback(async (trackId: number) => {
-    const track = tracks.find((tr) => tr.id === trackId)
-    if (!track?.file_path) return
+  const handlePlayNext = useCallback(async (ids: number[]) => {
+    const paths = tracks.filter((tr) => ids.includes(tr.id)).map((tr) => tr.file_path).filter(Boolean)
+    if (paths.length === 0) return
     try {
-      const n = await playNext([track.file_path])
-      if (n > 0) addToast?.(t('toast.playNext', '已插入下一首播放'), 'info')
+      const n = await playNext(paths)
+      if (n > 0) addToast?.(t('toast.playNext', '已插入下一首播放') + (n > 1 ? ` (${n})` : ''), 'info')
     } catch (e) {
       addToast?.(String(e), 'error')
     }

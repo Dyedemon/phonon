@@ -3196,6 +3196,10 @@ textarea::placeholder {
   background: color-mix(in srgb, var(--bg) 82%, transparent);
 }
 
+.track-row.selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 .track-row.playing {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);

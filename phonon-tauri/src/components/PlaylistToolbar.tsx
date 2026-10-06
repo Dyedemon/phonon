@@ -330,12 +330,13 @@ export default function PlaylistToolbar({ refreshTrigger, onUpdate, addToast }: 
       if (!selected) return
       const path = selected as string
       const results = await invoke<{ uri: string; name: string }[]>('scan_folder', { path })
-      const paths = results.map((r: { uri: string }) => r.uri)
-      if (paths.length === 0) {
+      if (results.length === 0) {
         addToast(t('toast.noAudioFound', '未找到支持的音频文件'), 'warn')
         return
       }
-      const result = await invoke<{ added: number; duplicates: number }>('add_to_queue', { paths })
+      // 同步只写歌单绑定，不动播放队列——此前这里把整个目录
+      // add_to_queue，用户排好的队列被无声替换（142 首），且同步的
+      // 曲目本来就会通过 sync_folder 进入歌单。
       // sync_folder must succeed — don't swallow errors
       await invoke('sync_folder', { playlist: activePlaylist, path })
       setSyncedFolder(path)
@@ -365,8 +366,7 @@ export default function PlaylistToolbar({ refreshTrigger, onUpdate, addToast }: 
 
       // Single consolidated toast
       const parts: string[] = []
-      if (result.added > 0) parts.push(`${result.added} ${t('playlist.tracks')}`)
-      if (result.duplicates > 0) parts.push(`${result.duplicates} ${t('toast.alreadyInQueue')}`)
+      if (results.length > 0) parts.push(`${results.length} ${t('playlist.tracks')}`)
       if (parts.length === 0) parts.push(t('toast.synced', '已同步'))
       const msg = rootsAdded
         ? `${t('toast.syncedAndScanned', '已同步并扫描媒体库')} · ${parts.join('，')}`

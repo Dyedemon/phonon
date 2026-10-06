@@ -46,14 +46,15 @@ export interface TrackTableProps {
   onEditMetadata?: (trackId: number) => void
   /** Play a track (replace queue + start). */
   onPlayTrack?: (trackId: number) => void
-  /** Play Next — insert after the current track without interrupting. */
-  onPlayNext?: (trackId: number) => void
-  /** Append a track to the queue. */
-  onAddToQueue?: (trackId: number) => void
+  /** Play Next — insert the selection after the current track. */
+  onPlayNext?: (ids: number[]) => void
+  /** Append the selection to the queue. */
+  onAddToQueue?: (ids: number[]) => void
 }
 
 type ContextMenuState = {
-  trackId: number
+  /** Operate on the whole selection (single row = [id]). */
+  ids: number[]
   x: number
   y: number
 } | null
@@ -207,6 +208,10 @@ export default function TrackTable({
   const [viewportH, setViewportH] = useState(600)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState>(null)
   const [tracksState, setTracksState] = useState(tracks)
+  // 批量选择：单击=单选，Ctrl/Cmd=加减选，Shift=范围选。右键菜单作用于
+  // 整个选择集（单选时等价于旧行为）。
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
+  const [anchorId, setAnchorId] = useState<number | null>(null)
 
   // Keep local state synced when parent passes a fresh array (e.g. after
   // an optimistic update flows back through props). Use ref to detect
@@ -273,15 +278,43 @@ export default function TrackTable({
 
   const renderRow = (track: LibraryTrack, idx: number) => {
     const playing = currentlyPlayingId === track.id
+    const selected = selectedIds.has(track.id)
     const badge = formatBadge(track.format)
     return (
       <div
         key={track.id}
-        className={`track-row ${playing ? 'playing' : ''}`}
+        className={`track-row ${playing ? 'playing' : ''} ${selected ? 'selected' : ''}`}
         style={{ height: ROW_HEIGHT }}
+        onClick={(e) => {
+          if (e.ctrlKey || e.metaKey) {
+            setSelectedIds((prev) => {
+              const next = new Set(prev)
+              if (next.has(track.id)) next.delete(track.id)
+              else next.add(track.id)
+              return next
+            })
+            setAnchorId(track.id)
+          } else if (e.shiftKey && anchorId != null) {
+            const from = tracksState.findIndex((tr) => tr.id === anchorId)
+            const to = tracksState.findIndex((tr) => tr.id === track.id)
+            if (from >= 0 && to >= 0) {
+              const [lo, hi] = from < to ? [from, to] : [to, from]
+              setSelectedIds(new Set(tracksState.slice(lo, hi + 1).map((tr) => tr.id)))
+            }
+          } else {
+            setSelectedIds(new Set([track.id]))
+            setAnchorId(track.id)
+          }
+        }}
         onContextMenu={(e) => {
           e.preventDefault()
-          setCtxMenu({ trackId: track.id, x: e.clientX, y: e.clientY })
+          // 右键落在选择集内 → 对整个选择集操作；否则重置为该行。
+          const ids = selectedIds.has(track.id) ? [...selectedIds] : [track.id]
+          if (!selectedIds.has(track.id)) {
+            setSelectedIds(new Set([track.id]))
+            setAnchorId(track.id)
+          }
+          setCtxMenu({ ids, x: e.clientX, y: e.clientY })
         }}
         onDoubleClick={() => onPlayTrack?.(track.id)}
       >
@@ -376,9 +409,9 @@ export default function TrackTable({
       {/* Context menu portal */}
       {ctxMenu && (
         <ContextMenu
+          ids={ctxMenu.ids}
           x={ctxMenu.x}
           y={ctxMenu.y}
-          trackId={ctxMenu.trackId}
           t={t}
           onClose={() => setCtxMenu(null)}
           onPlay={onPlayTrack}
@@ -396,33 +429,36 @@ export default function TrackTable({
 // ---------------------------------------------------------------------------
 
 interface ContextMenuProps {
+  /** Operate on the whole selection (single row = [id]). */
+  ids: number[]
   x: number
   y: number
-  trackId: number
   t: (k: string, f?: string) => string
   onClose: () => void
   onPlay?: (id: number) => void
-  onPlayNext?: (id: number) => void
-  onAddToQueue?: (id: number) => void
+  onPlayNext?: (ids: number[]) => void
+  onAddToQueue?: (ids: number[]) => void
   onEditMetadata?: (id: number) => void
 }
 
 function ContextMenu({
-  x, y, trackId, t, onClose,
+  ids, x, y, t, onClose,
   onPlay, onPlayNext, onAddToQueue, onEditMetadata,
 }: ContextMenuProps) {
   // Clamp to viewport so the menu doesn't get clipped off-screen.
   const cx = Math.min(x, window.innerWidth - 240)
   const cy = Math.min(y, window.innerHeight - 360)
+  const batchSuffix = ids.length > 1 ? ` (${ids.length})` : ''
+  const first = ids[0]
   // `disabled` = 前后端链路尚未接通的功能，灰显避免"点了没反应"。
   const items: { label: string; action?: () => void; separatorAfter?: boolean; disabled?: boolean }[] = [
-    { label: t('context.play', '播放'), action: () => onPlay?.(trackId) },
-    { label: t('context.playNext', '下一首播放'), action: () => onPlayNext?.(trackId) },
-    { label: t('context.addToQueue', '加入队列'), action: () => onAddToQueue?.(trackId) },
+    { label: t('context.play', '播放'), action: () => onPlay?.(first) },
+    { label: t('context.playNext', '下一首播放') + batchSuffix, action: () => onPlayNext?.(ids) },
+    { label: t('context.addToQueue', '加入队列') + batchSuffix, action: () => onAddToQueue?.(ids) },
     { label: t('context.addToPlaylist', '加入歌单'), disabled: true },
-    { label: '★ ' + t('library.favorite'), action: () => { /* toggle handled inline */ } },
-    { label: '⭐ ' + t('library.rating'), separatorAfter: true, disabled: true /* submenu placeholder */ },
-    { label: t('context.editMetadata', '编辑元数据') + ' ✎', action: () => onEditMetadata?.(trackId) },
+    { label: '★ ' + t('library.favorite'), separatorAfter: ids.length === 1, disabled: ids.length > 1 /* per-row toggle lives on the star column */ },
+    { label: '⭐ ' + t('library.rating'), separatorAfter: ids.length === 1, disabled: true /* submenu placeholder */ },
+    { label: t('context.editMetadata', '编辑元数据') + ' ✎' + (ids.length > 1 ? batchSuffix : ''), action: ids.length === 1 ? () => onEditMetadata?.(first) : undefined, disabled: ids.length > 1 /* batch edit lives in AlbumEditModal for now */ },
     { label: t('context.replaceCover', '替换封面'), disabled: true },
     { label: t('context.openFileLocation', '打开所在位置'), disabled: true /* needs opener plugin */ },
     { label: t('context.rescanMetadata', '重新扫描元数据'), disabled: true /* no per-track rescan command yet */ },

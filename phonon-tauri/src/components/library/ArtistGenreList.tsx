@@ -34,7 +34,8 @@ export interface ArtistGenreListProps {
   /** Currently-playing track id (passed through to TrackTable). */
   currentlyPlayingId?: number | null
   onPlayTrack?: (trackId: number) => void
-  onAddToQueue?: (trackId: number) => void
+  onPlayNext?: (ids: number[]) => void
+  onAddToQueue?: (ids: number[]) => void
   onEditMetadata?: (trackId: number) => void
 }
 
@@ -68,6 +69,7 @@ export default function ArtistGenreList({
   onOpenGenre,
   currentlyPlayingId,
   onPlayTrack,
+  onPlayNext,
   onAddToQueue,
   onEditMetadata,
 }: ArtistGenreListProps) {
@@ -140,6 +142,7 @@ export default function ArtistGenreList({
             currentlyPlayingId={currentlyPlayingId}
             subTab="all"
             onPlayTrack={onPlayTrack}
+            onPlayNext={onPlayNext}
             onAddToQueue={onAddToQueue}
             onEditMetadata={onEditMetadata}
           />

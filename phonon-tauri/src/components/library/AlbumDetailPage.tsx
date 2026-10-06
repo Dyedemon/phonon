@@ -31,7 +31,7 @@ export interface AlbumDetailPageProps {
   addToast?: (msg: string, kind?: 'info' | 'warn' | 'error') => void
   /** Currently-playing track id (passed through to TrackTable). */
   currentlyPlayingId?: number | null
-  onAddToQueue?: (trackId: number) => void
+  onAddToQueue?: (ids: number[]) => void
   onEditMetadata?: (trackId: number) => void
   /** Open album editor (AlbumEditModal). */
   onEditAlbum?: (albumId: number) => void
