@@ -215,8 +215,13 @@ export default function TrackTable({
 
   // Keep local state synced when parent passes a fresh array (e.g. after
   // an optimistic update flows back through props). Use ref to detect
-  // prop identity change.
-  useEffect(() => { setTracksState(tracks) }, [tracks])
+  // prop identity change. Selection is cleared too — stale ids would point
+  // at rows that may no longer exist in this view.
+  useEffect(() => {
+    setTracksState(tracks)
+    setSelectedIds(new Set())
+    setAnchorId(null)
+  }, [tracks])
 
   const containerRef = useRef<HTMLDivElement>(null)
 

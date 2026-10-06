@@ -5809,13 +5809,32 @@ pub fn library_try_recover_corrupt(
 /// library_edit_metadata_partial call failed at the file-write step.
 /// Returns the codec error string directly so the frontend can distinguish
 /// "library error" from "codec/file-write error".
+///
+/// Playing-file guard: rewriting tags shifts audio frame offsets, and the
+/// decoder stream for that same file would read misaligned data (glitches).
+/// The library row is already up to date — the user just retries after
+/// stopping/skipping the track.
 #[tauri::command]
 pub fn library_write_metadata_back_to_file(
     state: State<'_, AppState>,
     track_id: i64,
 ) -> Result<(), String> {
     ensure_library_open(&state)?;
+    let playing = state.engine.current_track();
     with_library(&state, |lib| {
+        fn base(p: &str) -> &str {
+            p.split('#').next().unwrap_or(p)
+        }
+        if let Some(playing_path) = &playing {
+            if let Some(t) = lib.get_track(track_id).map_err(|e| e.to_string())? {
+                if base(playing_path).eq_ignore_ascii_case(base(&t.file_path)) {
+                    return Err(
+                        "曲目正在播放，写回会干扰解码——切走或停止后点\"稍后重试写回\"（媒体库已保存）"
+                            .to_string(),
+                    );
+                }
+            }
+        }
         lib.write_metadata_back_to_file(track_id)
             .map_err(|e| e.to_string())
     })

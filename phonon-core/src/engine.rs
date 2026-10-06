@@ -1509,10 +1509,10 @@ impl PlaybackEngine {
         self.shuffle_state.lock().map(|s| s.enabled).unwrap_or(false)
     }
 
-    /// Fisher–Yates over 0..len, optionally anchoring `head` at position 0.
-    /// Time+pid seeded xorshift: shuffle needs no cryptographic randomness
-    /// and phonon-core stays free of a rand dependency.
-    fn build_shuffle_order(len: usize, head: Option<usize>) -> Vec<usize> {
+    /// In-place Fisher–Yates with the same time+pid seeded xorshift used by
+    /// `build_shuffle_order` — shared so other code can shuffle arbitrary
+    /// index collections (e.g. the "rest" of a walk after Play Next).
+    fn shuffle_slice(slice: &mut [usize]) {
         fn xorshift(state: &mut u64) -> u64 {
             let mut x = *state;
             x ^= x << 13;
@@ -1530,16 +1530,37 @@ impl PlaybackEngine {
         if seed == 0 {
             seed = 0x9E3779B97F4A7C15;
         }
-        let mut order: Vec<usize> = (0..len).collect();
-        for i in (1..order.len()).rev() {
+        for i in (1..slice.len()).rev() {
             let j = (xorshift(&mut seed) as usize) % (i + 1);
-            order.swap(i, j);
+            slice.swap(i, j);
         }
+    }
+
+    /// Fisher–Yates over 0..len, optionally anchoring `head` at position 0.
+    /// Time+pid seeded xorshift: shuffle needs no cryptographic randomness
+    /// and phonon-core stays free of a rand dependency.
+    fn build_shuffle_order(len: usize, head: Option<usize>) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..len).collect();
+        Self::shuffle_slice(&mut order);
         if let Some(h) = head {
             if let Some(p) = order.iter().position(|&x| x == h) {
                 order.swap(0, p);
             }
         }
+        order
+    }
+
+    /// Build a shuffle walk where `cur` leads, the `inserted` batch follows
+    /// immediately, and every other index is shuffled behind them. Used by
+    /// Play Next so an inserted batch really is "next" under shuffle.
+    fn walk_with_inserted(len: usize, cur: usize, inserted: &[usize]) -> Vec<usize> {
+        let mut rest: Vec<usize> = (0..len)
+            .filter(|i| *i != cur && !inserted.contains(i))
+            .collect();
+        Self::shuffle_slice(&mut rest);
+        let mut order = vec![cur];
+        order.extend_from_slice(inserted);
+        order.extend(rest);
         order
     }
 
@@ -1807,6 +1828,10 @@ impl PlaybackEngine {
     /// appended (there is no cursor to speak of). Duplicate paths are kept —
     /// a track deliberately played next may legitimately also sit elsewhere
     /// in the queue. Returns the number of tracks actually queued.
+    ///
+    /// When shuffle is on, the walk is rebuilt so the inserted batch really
+    /// does play next — otherwise the sequential insertion would sit outside
+    /// the random order and "Play Next" would silently do nothing.
     pub fn queue_play_next(&self, paths: &[&str]) -> usize {
         let batch: Vec<QueuedTrack> = paths
             .iter()
@@ -1827,12 +1852,21 @@ impl PlaybackEngine {
             *self.state.lock().unwrap(),
             PlaybackState::Playing | PlaybackState::Paused
         ) && cur < self.play_queue.lock().unwrap().len();
+
+        let mut st = self.shuffle_state.lock().unwrap();
         let mut q = self.play_queue.lock().unwrap();
         if has_cursor {
             let mut at = cur + 1;
-            for t in batch {
-                q.insert(at, t);
+            for t in &batch {
+                q.insert(at, t.clone());
                 at += 1;
+            }
+            // Shuffle on: re-walk with [cur, inserted…, rest shuffled] so the
+            // batch really is "next" under the random order too.
+            if st.enabled {
+                let len = q.len();
+                let inserted: Vec<usize> = (cur + 1..cur + 1 + n).collect();
+                st.order = Some(Self::walk_with_inserted(len, cur, &inserted));
             }
         } else {
             q.extend(batch);
@@ -4266,5 +4300,34 @@ mod shuffle_tests {
             None
         );
         assert!(PlaybackEngine::shuffled_prev(&st, PlaybackMode::RepeatAll, 4, 1).is_some());
+    }
+}
+
+#[cfg(test)]
+mod play_next_tests {
+    use super::*;
+
+    #[test]
+    fn walk_with_inserted_leads_with_cursor_then_batch() {
+        let order = PlaybackEngine::walk_with_inserted(10, 3, &[5, 7]);
+        assert_eq!(order[0], 3, "current track leads the walk");
+        assert_eq!(&order[1..3], &[5, 7], "inserted batch plays next");
+    }
+
+    #[test]
+    fn walk_with_inserted_is_a_full_permutation() {
+        let order = PlaybackEngine::walk_with_inserted(12, 2, &[0, 6, 11]);
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..12).collect::<Vec<_>>(), "no dupes, full cover");
+    }
+
+    #[test]
+    fn walk_with_inserted_handles_single_track_queue() {
+        // Real shape: inserting 1 track after cur=0 in a 1-track queue makes
+        // the queue 2 tracks with inserted at index 1.
+        let order = PlaybackEngine::walk_with_inserted(2, 0, &[1]);
+        assert_eq!(order[0], 0);
+        assert_eq!(order[1], 1);
     }
 }
