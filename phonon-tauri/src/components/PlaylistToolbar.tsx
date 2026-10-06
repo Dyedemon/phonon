@@ -432,32 +432,9 @@ export default function PlaylistToolbar({ refreshTrigger, onUpdate, addToast }: 
         </button>
       </div>
 
-      {/* System playlists — favorites & recent */}
-      <div className="playlist-system-section">
-        {systemPlaylists.map((pl) => {
-          const isFav = pl.system_id === 'favorites'
-          const isRec = pl.system_id === 'recent'
-          return (
-            <div
-              key={pl.name}
-              className={`playlist-item ${activePlaylist === pl.name ? 'active' : ''} system-playlist`}
-              onMouseEnter={() => setHoveredPlaylist(pl.name)}
-              onMouseLeave={() => setHoveredPlaylist(null)}
-            >
-              <button
-                className="playlist-item-btn"
-                onClick={() => handleSwitchPlaylist(pl)}
-                style={{ cursor: 'pointer' }}
-              >
-                {isFav && <span style={{ marginRight: 8, color: 'var(--accent)', fontSize: 'var(--text-base)' }}>{'\u2665'}</span>}
-                {isRec && <span style={{ marginRight: 8, opacity: 0.7, fontSize: 'var(--text-base)' }}>{'\u23F1'}</span>}
-                <span className="playlist-item-name">{pl.name}</span>
-                <span className="playlist-item-count" style={{ marginLeft: 'auto' }}>{pl.track_count}{t('playlist.trackUnit', '首')}</span>
-              </button>
-            </div>
-          )
-        })}
-      </div>
+      {/* System playlists (favorites/recent) 视图已移除：这些侧栏项显示的是
+          库计数，点进去却是"用收藏过滤的队列"，同名不同义——收藏/最近
+          的正确视图在媒体库 tab。queue 的管理留在队列视图本身。 */}
 
       <div className="playlist-divider" />
 

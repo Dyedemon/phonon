@@ -352,6 +352,16 @@ export default function Playlist({ onUpdate, compact: _compact, addToast: _addTo
     <div>
       {/* Queue List */}
       <div className="card" style={{ padding: 0, overflow: 'visible' }}>
+        {/* Title — 中间列表的语义在这里明示：这是引擎的播放队列 */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px 6px', fontWeight: 600, fontSize: 'var(--text-sm)',
+        }}>
+          <span>{t('playlist.queueTitle', '播放队列')}</span>
+          <span style={{ color: 'var(--text-dim)', fontSize: 'var(--text-xs)' }}>
+            {queue.length} {t('playlist.trackUnit', '首')}
+          </span>
+        </div>
         {/* Batch header */}
         {queue.length > 0 && (
           <div style={{
