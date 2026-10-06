@@ -35,10 +35,7 @@ export interface ArtistGenreListProps {
   currentlyPlayingId?: number | null
   onPlayTrack?: (trackId: number) => void
   onAddToQueue?: (trackId: number) => void
-  onAddToPlaylist?: (trackId: number) => void
   onEditMetadata?: (trackId: number) => void
-  onReplaceCover?: (trackId: number) => void
-  onRescanMetadata?: (trackId: number) => void
 }
 
 interface Bucket<T> {
@@ -72,10 +69,7 @@ export default function ArtistGenreList({
   currentlyPlayingId,
   onPlayTrack,
   onAddToQueue,
-  onAddToPlaylist,
   onEditMetadata,
-  onReplaceCover,
-  onRescanMetadata,
 }: ArtistGenreListProps) {
   const { t } = useI18n()
   const [artists, setArtists] = useState<ArtistInfo[]>([])
@@ -147,10 +141,7 @@ export default function ArtistGenreList({
             subTab="all"
             onPlayTrack={onPlayTrack}
             onAddToQueue={onAddToQueue}
-            onAddToPlaylist={onAddToPlaylist}
             onEditMetadata={onEditMetadata}
-            onReplaceCover={onReplaceCover}
-            onRescanMetadata={onRescanMetadata}
           />
         </div>
       </div>

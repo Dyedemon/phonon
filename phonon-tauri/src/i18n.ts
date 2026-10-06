@@ -473,6 +473,8 @@ const zh: Record<string, string> = {
   'library.addAlbumToQueue': '加入队列',
   'library.editAlbum': '编辑专辑',
   'library.playAll': '播放全部',
+  'context.playNext': '下一首播放',
+  'toast.playNext': '已插入下一首播放',
 
   // Spectrum
   'spectrum.title': '频谱',
@@ -1235,6 +1237,8 @@ const en: Record<string, string> = {
   'library.addAlbumToQueue': 'Add to queue',
   'library.editAlbum': 'Edit album',
   'library.playAll': 'Play All',
+  'context.playNext': 'Play Next',
+  'toast.playNext': 'Inserted as next up',
 
   // Spectrum
   'spectrum.title': 'Spectrum',

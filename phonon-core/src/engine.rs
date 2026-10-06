@@ -1800,6 +1800,46 @@ impl PlaybackEngine {
         Ok(true)
     }
 
+    /// Queue paths to play immediately after the current track ("Play Next").
+    ///
+    /// While playing/paused the batch is inserted right after the cursor so
+    /// it plays before the rest of the queue; when idle the batch is simply
+    /// appended (there is no cursor to speak of). Duplicate paths are kept —
+    /// a track deliberately played next may legitimately also sit elsewhere
+    /// in the queue. Returns the number of tracks actually queued.
+    pub fn queue_play_next(&self, paths: &[&str]) -> usize {
+        let batch: Vec<QueuedTrack> = paths
+            .iter()
+            .filter(|p| Self::is_valid_audio_path(p))
+            .map(|p| QueuedTrack {
+                path: p.to_string(),
+                start_offset: 0.0,
+                duration_limit: None,
+                display_name: Self::display_name(p),
+            })
+            .collect();
+        if batch.is_empty() {
+            return 0;
+        }
+        let n = batch.len();
+        let cur = *self.current_queue_index.lock().unwrap();
+        let has_cursor = matches!(
+            *self.state.lock().unwrap(),
+            PlaybackState::Playing | PlaybackState::Paused
+        ) && cur < self.play_queue.lock().unwrap().len();
+        let mut q = self.play_queue.lock().unwrap();
+        if has_cursor {
+            let mut at = cur + 1;
+            for t in batch {
+                q.insert(at, t);
+                at += 1;
+            }
+        } else {
+            q.extend(batch);
+        }
+        n
+    }
+
     /// Enqueue a track at the front of the queue (new tracks appear at top).
     pub fn enqueue_front(&self, path: &str) -> Result<bool, EngineError> {
         if !Self::is_valid_audio_path(path) {

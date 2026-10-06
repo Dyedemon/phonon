@@ -829,6 +829,20 @@ pub fn clear_queue(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<
     Ok(())
 }
 
+/// "Play Next": insert the paths right after the current track (append
+/// when idle). Returns the number of tracks actually queued.
+#[tauri::command]
+pub fn queue_play_next(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<usize, String> {
+    let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+    let n = state.engine.queue_play_next(&refs);
+    let _ = app.emit("queue-changed", ());
+    Ok(n)
+}
+
 #[tauri::command]
 pub fn play_index(state: State<'_, AppState>, index: usize) -> Result<(), String> {
     state

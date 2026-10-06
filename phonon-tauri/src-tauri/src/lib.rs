@@ -1403,6 +1403,7 @@ pub fn run() {
             commands::remove_from_queue,
             commands::get_queue,
             commands::clear_queue,
+            commands::queue_play_next,
             commands::reorder_queue,
             commands::play_index,
             // Playlist

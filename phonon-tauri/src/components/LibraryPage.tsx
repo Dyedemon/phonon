@@ -16,7 +16,7 @@ import MetadataEditModal from './library/MetadataEditModal'
 import AlbumEditModal from './library/AlbumEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
 import { getRoots, getTracks, listAlbums, listArtists } from '../api/library'
-import { addToQueue, clearQueue } from '../api/queue'
+import { addToQueue, clearQueue, playNext } from '../api/queue'
 import { playIndex } from '../api/player'
 
 export type LibrarySubTab =
@@ -140,6 +140,18 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
     }
   }, [tracks, addToast, t])
 
+  // 下一首播放：插到当前曲之后，不打断正在播的歌。
+  const handlePlayNext = useCallback(async (trackId: number) => {
+    const track = tracks.find((tr) => tr.id === trackId)
+    if (!track?.file_path) return
+    try {
+      const n = await playNext([track.file_path])
+      if (n > 0) addToast?.(t('toast.playNext', '已插入下一首播放'), 'info')
+    } catch (e) {
+      addToast?.(String(e), 'error')
+    }
+  }, [tracks, addToast, t])
+
   // Match current track path to a track id for highlight.
   const currentlyPlayingId = useMemo(() => {
     if (!currentTrackPath) return null
@@ -227,6 +239,7 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   const trackTableCallbacks = {
     currentlyPlayingId,
     onPlayTrack: handlePlayTrack,
+    onPlayNext: handlePlayNext,
     onAddToQueue: handleAddToQueue,
     onEditMetadata: (trackId: number) => setEditingTrackId(trackId),
   }

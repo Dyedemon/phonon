@@ -46,14 +46,10 @@ export interface TrackTableProps {
   onEditMetadata?: (trackId: number) => void
   /** Play a track (replace queue + start). */
   onPlayTrack?: (trackId: number) => void
+  /** Play Next — insert after the current track without interrupting. */
+  onPlayNext?: (trackId: number) => void
   /** Append a track to the queue. */
   onAddToQueue?: (trackId: number) => void
-  /** Append a track to a specific playlist (open the playlist picker). */
-  onAddToPlaylist?: (trackId: number) => void
-  /** Replace cover art (open CropEditor → cover bytes → setTrackCoverBytes). */
-  onReplaceCover?: (trackId: number) => void
-  /** Rescan metadata for a single track from the file. */
-  onRescanMetadata?: (trackId: number) => void
 }
 
 type ContextMenuState = {
@@ -202,6 +198,7 @@ export default function TrackTable({
   currentlyPlayingId,
   subTab = 'all',
   onPlayTrack,
+  onPlayNext,
   onAddToQueue,
   onEditMetadata,
 }: TrackTableProps) {
@@ -385,6 +382,7 @@ export default function TrackTable({
           t={t}
           onClose={() => setCtxMenu(null)}
           onPlay={onPlayTrack}
+          onPlayNext={onPlayNext}
           onAddToQueue={onAddToQueue}
           onEditMetadata={onEditMetadata}
         />
@@ -404,13 +402,14 @@ interface ContextMenuProps {
   t: (k: string, f?: string) => string
   onClose: () => void
   onPlay?: (id: number) => void
+  onPlayNext?: (id: number) => void
   onAddToQueue?: (id: number) => void
   onEditMetadata?: (id: number) => void
 }
 
 function ContextMenu({
   x, y, trackId, t, onClose,
-  onPlay, onAddToQueue, onEditMetadata,
+  onPlay, onPlayNext, onAddToQueue, onEditMetadata,
 }: ContextMenuProps) {
   // Clamp to viewport so the menu doesn't get clipped off-screen.
   const cx = Math.min(x, window.innerWidth - 240)
@@ -418,6 +417,7 @@ function ContextMenu({
   // `disabled` = 前后端链路尚未接通的功能，灰显避免"点了没反应"。
   const items: { label: string; action?: () => void; separatorAfter?: boolean; disabled?: boolean }[] = [
     { label: t('context.play', '播放'), action: () => onPlay?.(trackId) },
+    { label: t('context.playNext', '下一首播放'), action: () => onPlayNext?.(trackId) },
     { label: t('context.addToQueue', '加入队列'), action: () => onAddToQueue?.(trackId) },
     { label: t('context.addToPlaylist', '加入歌单'), disabled: true },
     { label: '★ ' + t('library.favorite'), action: () => { /* toggle handled inline */ } },

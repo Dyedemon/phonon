@@ -69,6 +69,12 @@ export function clearQueue(): Promise<void> {
   return invoke('clear_queue');
 }
 
+/** Play Next: insert paths right after the current track (append when idle).
+ *  Returns the number of tracks actually queued. */
+export function playNext(paths: string[]): Promise<number> {
+  return invoke('queue_play_next', { paths });
+}
+
 // ---------------------------------------------------------------------------
 // User playlists (in-app playlist management)
 // ---------------------------------------------------------------------------
