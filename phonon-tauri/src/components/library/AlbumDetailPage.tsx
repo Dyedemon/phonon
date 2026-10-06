@@ -87,6 +87,13 @@ export default function AlbumDetailPage({
 
   useEffect(() => refresh(), [refresh])
 
+  // 库数据变化（收藏/评分/编辑专辑/播放记录）后重拉本页，详情页不显示过期快照。
+  useEffect(() => {
+    const handler = () => refresh()
+    window.addEventListener('library-changed', handler)
+    return () => window.removeEventListener('library-changed', handler)
+  }, [refresh])
+
   // 专辑详情页的播放上下文 = 专辑曲目本身（所见即所得）：
   // 双击任一行从该行连播整张专辑，"播放专辑"从第一首开始。
   const playFromAlbum = useCallback(async (trackId: number | null) => {

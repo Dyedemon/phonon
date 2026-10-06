@@ -117,6 +117,41 @@ export default function Playlist({ onUpdate, compact: _compact, addToast: _addTo
     })
   }, [])
 
+  // 库数据变化（媒体库里收藏/评分/元数据编辑）后重解析队列行的缓存，
+  // 否则队列行停留在入队那一刻的快照。
+  useEffect(() => {
+    let cancelled = false
+    const handler = () => {
+      void (async () => {
+        const paths = [...trackMap.keys()]
+        if (paths.length === 0) return
+        const updates = new Map<string, TrackInfo | null>()
+        for (const path of paths) {
+          if (cancelled) return
+          try {
+            updates.set(path, await getTrackByPath(path))
+          } catch {
+            updates.set(path, null)
+          }
+        }
+        if (cancelled) return
+        setTrackMap((prev) => {
+          const next = new Map(prev)
+          for (const [p, info] of updates) {
+            if (info) next.set(p, info)
+            else next.delete(p) // 曲目已不在库中
+          }
+          return next
+        })
+      })()
+    }
+    window.addEventListener('library-changed', handler)
+    return () => {
+      cancelled = true
+      window.removeEventListener('library-changed', handler)
+    }
+  }, [trackMap])
+
   // Load album art for visible tracks.
   // Depend on actual queue paths (not just length) so reorders and
   // replacements trigger cover reloads and old URLs get revoked.

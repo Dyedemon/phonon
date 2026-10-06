@@ -104,6 +104,19 @@ export default function Player({ playback, onUpdate: _onUpdate }: Props) {
     }
   }, [playback.current_track])
 
+  // 收藏/评分/播放次数是"活"数据：媒体库、队列任何地方改动后这里同步，
+  // 否则播放器的心形会停留在切歌那一刻的快照。
+  useEffect(() => {
+    const handler = () => {
+      if (!playback.current_track) return
+      getTrackByPath(playback.current_track)
+        .then((info) => setTrackInfo(info))
+        .catch(() => {})
+    }
+    window.addEventListener('library-changed', handler)
+    return () => window.removeEventListener('library-changed', handler)
+  }, [playback.current_track])
+
   const formatBitrate = (kbps: number) => {
     if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`
     return `${kbps} kbps`
