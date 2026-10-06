@@ -17,5 +17,8 @@ image.workspace = true
 # Audio
 symphonia.workspace = true
 
+# Tag write-back (RC2)
+lofty = "0.22"
+
 # Encoding
 encoding_rs = "0.8"

@@ -472,17 +472,124 @@ pub struct PartialMeta {
 
 /// Writes `partial` metadata patch back into the actual audio file.
 ///
-/// RC 1 stub: returns `Err` with a human-readable message so the frontend
-/// can show the correct banner ("已仅保存到媒体库，文件回写将在 RC2 支持").
-/// The database column always succeeds first (caller writes the library
-/// BEFORE attempting this); this stub only handles the filesystem side.
+/// Semantics mirror the library-row update performed by the caller:
+/// `Some(value)` = overwrite, `None` = leave the on-disk tag untouched,
+/// `Some("")` = clear the field. Rating is intentionally NOT written —
+/// rating mechanisms are tag-format specific (POPM / FMPS_RATING) and the
+/// library row remains the single source of truth for it.
+///
+/// Uses lofty, which dispatches to the correct tag format per container
+/// (FLAC/OGG/Opus → Vorbis comments, MP3 → ID3v2, M4A → iTunes atoms).
+/// CUE virtual-track suffixes (`album.flac#2`) are stripped before write.
 pub fn write_metadata_to_file(
-    _path: &str,
-    _partial: &PartialMeta,
+    path: &str,
+    partial: &PartialMeta,
 ) -> Result<(), crate::decoder::CodecError> {
-    Err(crate::decoder::CodecError::NotImplemented(
-        "Metadata file write-back is not implemented for RC1. Changes saved to Phonon media library database only. File on-disk will be updated in RC2.".to_string()
-    ))
+    use lofty::config::WriteOptions;
+    use lofty::file::{AudioFile, TaggedFileExt};
+    use lofty::tag::{ItemKey, Tag};
+
+    // CUE virtual tracks write to the underlying audio file. (Local copy of
+    // the engine's strip_cue_index — that one is engine-private.)
+    let base_path = match path.rfind('#') {
+        Some(hash_pos) => {
+            let suffix = &path[hash_pos + 1..];
+            let base = &path[..hash_pos];
+            let last_sep = base.rfind(['/', '\\']).map(|p| p + 1).unwrap_or(0);
+            if !suffix.is_empty()
+                && suffix.chars().all(|c| c.is_ascii_digit())
+                && hash_pos >= last_sep
+            {
+                base
+            } else {
+                path
+            }
+        }
+        None => path,
+    };
+
+    let mut tagged = lofty::probe::Probe::open(base_path)
+        .and_then(|p| p.read())
+        .map_err(|e| crate::decoder::CodecError::Decode(format!("tag read failed: {e}")))?;
+
+    // Field writes need &mut tagged; scoping them lets the borrow end
+    // before save_to_path takes its own &mut.
+    {
+        // Reuse the container's primary tag; create it if the file has none.
+        let ptype = tagged.file_type().primary_tag_type();
+        if tagged.tag_mut(ptype).is_none() && tagged.first_tag_mut().is_none() {
+            tagged.insert_tag(Tag::new(ptype));
+        }
+        let tag = if let Some(t) = tagged.tag_mut(ptype) {
+            t
+        } else if let Some(t) = tagged.first_tag_mut() {
+            t
+        } else {
+            return Err(crate::decoder::CodecError::Decode(
+                "no writable tag after insert".to_string(),
+            ));
+        };
+
+    // (ItemKey, Option<String>) pairs — Some("") clears, Some(v) writes.
+    let string_fields: [(&ItemKey, &Option<String>); 6] = [
+        (&ItemKey::TrackTitle, &partial.title),
+        (&ItemKey::TrackArtist, &partial.artist),
+        (&ItemKey::AlbumTitle, &partial.album),
+        (&ItemKey::AlbumArtist, &partial.album_artist),
+        (&ItemKey::Genre, &partial.genre),
+        (&ItemKey::Composer, &partial.composer),
+    ];
+    for (key, value) in string_fields {
+        match value {
+            Some(v) if v.is_empty() => tag.remove_key(key),
+            Some(v) => {
+                tag.insert_text(key.clone(), v.clone());
+            }
+            None => {}
+        }
+    }
+    // Numeric fields are stored as tag strings.
+    let number_fields: [(&ItemKey, &Option<i32>); 3] = [
+        (&ItemKey::Year, &partial.year),
+        (&ItemKey::TrackNumber, &partial.track_number),
+        (&ItemKey::DiscNumber, &partial.disc_number),
+    ];
+    for (key, value) in number_fields {
+        match value {
+            Some(v) if *v <= 0 => tag.remove_key(key),
+            Some(v) => {
+                tag.insert_text(key.clone(), v.to_string());
+            }
+            None => {}
+        }
+    }
+    // Cover art: replace the front-cover picture. MIME from magic bytes.
+    if let Some(bytes) = &partial.cover_bytes {
+        if !bytes.is_empty() {
+            let mime = if bytes.starts_with(&[0xFF, 0xD8]) {
+                Some(lofty::picture::MimeType::Jpeg)
+            } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+                Some(lofty::picture::MimeType::Png)
+            } else {
+                Some(lofty::picture::MimeType::Unknown(String::from("image/webp")))
+            };
+            let picture = lofty::picture::Picture::new_unchecked(
+                lofty::picture::PictureType::CoverFront,
+                mime,
+                None,
+                bytes.clone(),
+            );
+            tag.remove_picture_type(lofty::picture::PictureType::CoverFront);
+            tag.push_picture(picture);
+        }
+    }
+    } // end of &mut tagged scope
+
+    tagged
+        .save_to_path(base_path, WriteOptions::default())
+        .map_err(|e| crate::decoder::CodecError::Decode(format!("tag save failed: {e}")))?;
+    log::info!("Metadata written back to file: {base_path}");
+    Ok(())
 }
 
 #[cfg(test)]
