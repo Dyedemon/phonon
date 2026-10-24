@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from '../i18n'
+import { search as librarySearch, type SearchResult } from '../api/library'
+import { playNext } from '../api/queue'
 
 interface UserPlaylist {
   name: string
@@ -20,6 +22,26 @@ export default function PlaylistToolbar({ refreshTrigger, onUpdate, addToast }: 
   const { t } = useI18n()
   const [playlists, setPlaylists] = useState<UserPlaylist[]>([])
   const [systemPlaylists, setSystemPlaylists] = useState<UserPlaylist[]>([])
+  // ── 快速找歌：FTS+拼音搜库 → 插播（免跨 tab） ──────────────
+  const [quickQuery, setQuickQuery] = useState('')
+  const [quickResults, setQuickResults] = useState<SearchResult[]>([])
+  useEffect(() => {
+    const q = quickQuery.trim()
+    if (q.length < 2) {
+      setQuickResults([])
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void librarySearch(q, 10)
+        .then((rows) => { if (!cancelled) setQuickResults(rows) })
+        .catch(() => { if (!cancelled) setQuickResults([]) })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [quickQuery])
   const [activePlaylist, setActivePlaylist] = useState('')
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false)
   const [showNewInput, setShowNewInput] = useState(false)
@@ -406,6 +428,60 @@ export default function PlaylistToolbar({ refreshTrigger, onUpdate, addToast }: 
 
   return (
     <div ref={menuRef} className="playlist-toolbar">
+      {/* ── 快速找歌：FTS+拼音搜库 → 插播，免跨 tab ───────────── */}
+      <div style={{ position: 'relative', marginBottom: 8 }}>
+        <input
+          type="text"
+          value={quickQuery}
+          onChange={(e) => setQuickQuery(e.target.value)}
+          placeholder={t('playlist.quickSearch.placeholder', '找歌并插播…')}
+          style={{
+            width: '100%', boxSizing: 'border-box', fontSize: 'var(--text-sm)',
+            padding: '6px 10px', background: 'var(--bg)', border: '1px solid var(--border)',
+            borderRadius: 4, color: 'var(--text)', outline: 'none',
+          }}
+        />
+        {quickResults.length > 0 && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300,
+            background: 'var(--bg-card)', border: '1px solid var(--border-glow)',
+            borderRadius: 6, maxHeight: 280, overflowY: 'auto',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          }}>
+            {quickResults.map((r) => (
+              <button
+                key={r.track.id}
+                className="list-item"
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  background: 'transparent', border: 'none', color: 'inherit',
+                  padding: '6px 10px', cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(128,128,128,0.2)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                onClick={async () => {
+                  try {
+                    await playNext([r.track.file_path])
+                    addToast(t('toast.playNext', '已插入下一首播放'), 'info')
+                    setQuickQuery('')
+                    setQuickResults([])
+                  } catch (e) {
+                    addToast(String(e), 'error')
+                  }
+                }}
+              >
+                <div style={{ fontSize: 'var(--text-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.track.title || t('library.unknownTrack')}
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.track.artist || '—'}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Add buttons — always visible; clicking during system playlist shows a hint */}
       <div className="playlist-add-btns">
         <button className="btn btn-primary btn-sm" style={btnStyle} onClick={addFiles}>

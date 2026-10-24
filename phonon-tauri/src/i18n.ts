@@ -479,6 +479,7 @@ const zh: Record<string, string> = {
   'library.fillTagsFailed': '写文件失败 {n} 首',
   'library.fillTagsNoSep': '{n} 首文件名无法解析',
   'playlist.queueTitle': '播放队列',
+  'playlist.quickSearch.placeholder': '找歌并插播…',
   'context.playNext': '下一首播放',
   'toast.playNext': '已插入下一首播放',
 
@@ -1249,6 +1250,7 @@ const en: Record<string, string> = {
   'library.fillTagsFailed': '{n} file writes failed',
   'library.fillTagsNoSep': '{n} filenames could not be parsed',
   'playlist.queueTitle': 'Play Queue',
+  'playlist.quickSearch.placeholder': 'Search & play next…',
   'context.playNext': 'Play Next',
   'toast.playNext': 'Inserted as next up',
 
