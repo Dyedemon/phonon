@@ -2281,27 +2281,19 @@ pub fn save_session(state: State<'_, AppState>) -> Result<(), String> {
 /// kills (taskkill / crash) then lose at most the last 3 seconds of queue
 /// churn instead of the whole session — the exit hook alone is bypassed
 /// when close-to-tray hides the app and a hard kill follows.
+/// Session save on queue mutation — **synchronous, on the calling thread**.
+///
+/// 此前是 3s 后台线程 + 全局防重入，但后台线程以不同顺序拿
+/// settings/engine/歌单锁，与前端刷新触发的 load_session 并发时
+/// 会死锁（页面永远停在启动 logo）。改为调用线程内同步保存：
+/// 锁顺序自然延续无环，写一个 ~50KB JSON 也足够快。
 pub fn schedule_session_save(app: &tauri::AppHandle) {
-    {
-        let s = app.state::<AppState>();
-        if s
-            .session_save_pending
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
-            return;
-        }
+    let s = app.state::<AppState>();
+    if let Err(e) = persist_session(&s) {
+        log::warn!("[session] save failed: {e}");
+    } else {
+        log::info!("[session] saved (queue mutation)");
     }
-    let handle = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        let st = handle.state::<AppState>();
-        st.session_save_pending
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        match persist_session(&st) {
-            Ok(()) => log::info!("[session] debounced save done"),
-            Err(e) => log::warn!("[session] debounced save failed: {e}"),
-        }
-    });
 }
 
 /// Load and restore session directly in the engine (called once at startup).
