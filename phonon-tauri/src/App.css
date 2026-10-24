@@ -3304,21 +3304,19 @@ textarea::placeholder {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text);
-  opacity: 0.55;
+  color: var(--text-dim);
   font-size: 16px;
   padding: 4px;
   line-height: 1;
-  transition: opacity 0.15s, color 0.15s;
+  transition: color 0.15s, transform 0.1s;
 }
 
 .fav-btn:hover {
-  opacity: 1;
+  color: var(--text);
 }
 
 .fav-btn.on {
-  color: #e8b339;
-  opacity: 1;
+  color: var(--accent);
 }
 
 /* ── AlbumGrid：封面网格 ────────────────────────────────────── */

@@ -727,6 +727,7 @@ pub fn add_to_queue(
         }
     }
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(AddToQueueResult { added, duplicates })
 }
 
@@ -769,6 +770,7 @@ pub fn add_cue_to_queue(
         }
     }
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(AddToQueueResult { added, duplicates })
 }
 
@@ -791,6 +793,7 @@ pub fn remove_from_queue(
     }
     drop(active);
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(())
 }
 
@@ -814,6 +817,7 @@ pub fn reorder_queue(
     }
     drop(active);
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(())
 }
 
@@ -826,6 +830,7 @@ pub fn get_queue(state: State<'_, AppState>) -> Result<Vec<QueueItem>, String> {
 pub fn clear_queue(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     state.engine.clear_queue();
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(())
 }
 
@@ -840,6 +845,7 @@ pub fn queue_play_next(
     let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
     let n = state.engine.queue_play_next(&refs);
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(n)
 }
 
@@ -2148,8 +2154,11 @@ pub fn get_startup_behavior(state: State<'_, AppState>) -> Result<String, String
 
 // ── Session Save/Load ─────────────────────────────────────────
 
-#[tauri::command]
-pub fn save_session(state: State<'_, AppState>) -> Result<(), String> {
+/// Core session writer shared by the save command and the debounced
+/// scheduler. All queue/playlist mutations funnel here (directly or via
+/// `schedule_session_save`) so a hard kill loses at most one debounce
+/// window of state.
+pub fn persist_session(state: &AppState) -> Result<(), String> {
     let settings = state.settings.lock().unwrap();
     if settings.startup_behavior != "Remember" {
         return Ok(());
@@ -2259,8 +2268,40 @@ pub fn save_session(state: State<'_, AppState>) -> Result<(), String> {
     f.flush().map_err(|e| e.to_string())?;
     drop(f);
     std::fs::rename(&tmp, &session_path).map_err(|e| format!("Failed to save session: {}", e))?;
-    log::debug!("Session saved to {}", session_path.display());
+    log::info!("Session saved to {}", session_path.display());
     Ok(())
+}
+
+#[tauri::command]
+pub fn save_session(state: State<'_, AppState>) -> Result<(), String> {
+    persist_session(&state)
+}
+
+/// Debounced session save: queue mutations schedule a write 3s out. Hard
+/// kills (taskkill / crash) then lose at most the last 3 seconds of queue
+/// churn instead of the whole session — the exit hook alone is bypassed
+/// when close-to-tray hides the app and a hard kill follows.
+pub fn schedule_session_save(app: &tauri::AppHandle) {
+    {
+        let s = app.state::<AppState>();
+        if s
+            .session_save_pending
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
+        }
+    }
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let st = handle.state::<AppState>();
+        st.session_save_pending
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        match persist_session(&st) {
+            Ok(()) => log::info!("[session] debounced save done"),
+            Err(e) => log::warn!("[session] debounced save failed: {e}"),
+        }
+    });
 }
 
 /// Load and restore session directly in the engine (called once at startup).
@@ -3964,6 +4005,7 @@ pub async fn play_url(
     engine.start_playback().map_err(|e| e.to_string())?;
     // Send metadata event
     let _ = app.emit("queue-changed", ());
+    schedule_session_save(&app);
     Ok(())
 }
 
@@ -5055,10 +5097,17 @@ pub fn library_get_tracks(
     state: State<'_, AppState>,
     filter: Option<phonon_media::TrackFilter>,
 ) -> Result<Vec<phonon_media::TrackInfo>, String> {
-    with_library(&state, |lib| {
-        lib.get_tracks(&filter.unwrap_or_default())
-            .map_err(|e| e.to_string())
-    })
+    let resolved = filter.unwrap_or_default();
+    let rows = with_library(&state, |lib| {
+        lib.get_tracks(&resolved).map_err(|e| e.to_string())
+    })?;
+    log::info!(
+        "[debug] library_get_tracks: album_id={:?} artist_id={:?} -> {} rows",
+        resolved.album_id,
+        resolved.artist_id,
+        rows.len()
+    );
+    Ok(rows)
 }
 
 /// Get a single track by id.
@@ -5151,6 +5200,30 @@ pub fn library_set_track_cover(
         lib.set_track_cover_from_file(id, std::path::Path::new(&cover_path))
             .map_err(|e| e.to_string())
     })
+}
+
+/// Fill missing title/artist tags from filenames ("Artist - Title.ext").
+/// Never overwrites existing tags. The currently playing file is skipped on
+/// the filesystem side (frame-offset risk) but still updated in the DB.
+/// Returns (filled, no_separator, file_write_failed).
+#[tauri::command]
+pub fn library_fill_tags_from_filename(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(usize, usize, usize), String> {
+    ensure_library_open(&state)?;
+    let skip = state.engine.current_track();
+    let stats = with_library(&state, |lib| {
+        lib.fill_missing_tags_from_filename(skip.as_deref())
+            .map_err(|e| e.to_string())
+    })?;
+    log::info!(
+        "[media] filename tag fill: filled={} no_separator={} write_failed={}",
+        stats.0, stats.1, stats.2
+    );
+    schedule_session_save(&app);
+    let _ = app.emit("library-changed", ());
+    Ok(stats)
 }
 
 /// Physically remove soft-deleted rows. Returns the number of rows deleted.

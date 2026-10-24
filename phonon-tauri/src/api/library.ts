@@ -305,6 +305,12 @@ export function search(query: string, limit?: number): Promise<SearchResult[]> {
   return invoke('library_search', { query, limit: limit ?? null });
 }
 
+/** Fill missing title/artist tags from filenames. Returns
+ *  [filled, no_separator, file_write_failed]. */
+export function fillTagsFromFilename(): Promise<[number, number, number]> {
+  return invoke('library_fill_tags_from_filename');
+}
+
 /** List tracks with optional filter/pagination. */
 export function getTracks(filter?: TrackFilter): Promise<TrackInfo[]> {
   return invoke('library_get_tracks', { filter: filter ?? null });

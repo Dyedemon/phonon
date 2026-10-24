@@ -361,7 +361,8 @@ export default function TrackTable({
               }}
               aria-label={track.is_favorite ? t('library.unfavorite') : t('library.favorite')}
             >
-              {track.is_favorite ? '\u2605' : '\u2606'}
+              {/* 与播放器 FavoriteIcon 一致的爱心（此前是星形，两处不一致） */}
+              {track.is_favorite ? '\u2665' : '\u2661'}
             </button>
           )}
         </div>

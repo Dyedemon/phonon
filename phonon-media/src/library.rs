@@ -977,6 +977,96 @@ impl MediaLibrary {
         Ok(row)
     }
 
+    /// Fill missing title/artist tags by parsing the file name.
+    ///
+    /// Filenames shaped like `Artist - Title.ext` yield both fields; anything
+    /// without a ` - ` separator only fills the title. Existing tags are
+    /// never overwritten, files that are currently playing are skipped on
+    /// the filesystem side (frame-offset risk) but still updated in the DB.
+    /// Returns (filled, no_separator, file_write_failed).
+    pub fn fill_missing_tags_from_filename(
+        &self,
+        skip_path: Option<&str>,
+    ) -> Result<(usize, usize, usize)> {
+        use phonon_codec::PartialMeta;
+
+        let conn = self.conn.lock().map_err(poison)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, file_path FROM tracks
+             WHERE is_deleted = 0
+               AND (title IS NULL OR title = '' OR artist IS NULL OR artist = '')",
+        )?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
+        drop(stmt);
+
+        let mut filled = 0usize;
+        let mut no_separator = 0usize;
+        let mut write_failed = 0usize;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        for (id, file_path) in rows {
+            let stem = std::path::Path::new(&file_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            // First " - " separates artist from title (foobar Masstagger
+            // convention). Without it there is nothing reliable to parse.
+            let (artist, title) = match stem.split_once(" - ") {
+                Some((a, t)) if !a.trim().is_empty() && !t.trim().is_empty() => {
+                    (Some(a.trim().to_string()), Some(t.trim().to_string()))
+                }
+                _ if stem.is_empty() => continue,
+                _ => (None, Some(stem.trim().to_string())),
+            };
+            if artist.is_none() {
+                no_separator += 1;
+            }
+
+            conn.execute(
+                "UPDATE tracks SET title = COALESCE(?1, title), artist = COALESCE(?2, artist),
+                        updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![title, artist, now, id],
+            )?;
+            filled += 1;
+
+            // File write-back — skip the track that is currently playing
+            // (rewriting tags shifts frame offsets under the decoder).
+            let playing = skip_path
+                .map(|p| p.split('#').next().unwrap_or(p))
+                .map(|p| {
+                    file_path
+                        .split('#')
+                        .next()
+                        .unwrap_or(&file_path)
+                        .eq_ignore_ascii_case(p)
+                })
+                .unwrap_or(false);
+            if !playing {
+                let partial = PartialMeta {
+                    title: title.clone(),
+                    artist: artist.clone(),
+                    ..Default::default()
+                };
+                if let Err(e) =
+                    phonon_codec::write_metadata_to_file(&file_path, &partial)
+                {
+                    write_failed += 1;
+                    log::warn!("[media] filename tag fill: write failed for {file_path}: {e}");
+                }
+            }
+        }
+
+        if filled > 0 {
+            crate::library::rebuild_aggregates(&conn)?;
+        }
+        Ok((filled, no_separator, write_failed))
+    }
+
     /// Bind raw image bytes as the cover for a track. Hashes via
     /// `thumbnails::ensure_thumbnail`, writes `tracks.cover_hash`, returns
     /// the SHA1 hash. Caller is responsible for content-type validation —

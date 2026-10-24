@@ -1568,6 +1568,7 @@ pub fn run() {
             commands::library_get_tracks_by_paths,
             commands::library_search_suggest,
             commands::library_edit_metadata_partial,
+            commands::library_fill_tags_from_filename,
             commands::library_set_track_cover_bytes,
             commands::library_try_recover_corrupt,
             commands::library_write_metadata_back_to_file,

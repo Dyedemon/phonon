@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, emitTo } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -2348,8 +2348,14 @@ function PlayerBar({
             title={t('player.mode.hint', '点击切换播放模式')}
           >
             {shuffleOn ? (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
+              // feather shuffle（描边）—— 与 modeIcon 三个图标同风格同尺寸
+              <svg {...svgAttrs(24)}>
+                <polyline points="16 3 21 3 21 8" />
+                <line x1="4" y1="20" x2="21" y2="3" />
+                <polyline points="21 16 21 21 16 21" />
+                <line x1="15" y1="15" x2="21" y2="21" />
+                <line x1="4" y1="4" x2="9" y2="9" />
+                <polyline points="9 15 4 20" />
               </svg>
             ) : (
               modeIcon(playbackMode)

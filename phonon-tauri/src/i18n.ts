@@ -473,6 +473,11 @@ const zh: Record<string, string> = {
   'library.addAlbumToQueue': '加入队列',
   'library.editAlbum': '编辑专辑',
   'library.playAll': '播放全部',
+  'library.fillTags': '补全标签',
+  'library.fillTagsTitle': '从文件名补全缺失的标题/艺术家（Artist - Title 格式）',
+  'library.fillTagsDone': '已从文件名补全 {n} 首标签',
+  'library.fillTagsFailed': '写文件失败 {n} 首',
+  'library.fillTagsNoSep': '{n} 首文件名无法解析',
   'playlist.queueTitle': '播放队列',
   'context.playNext': '下一首播放',
   'toast.playNext': '已插入下一首播放',
@@ -483,7 +488,7 @@ const zh: Record<string, string> = {
   // Playlist
   'playlist.track': '曲目',
   'playlist.duration': '时长',
-  'playlist.noTracks': '播放列表为空',
+  'playlist.noTracks': '播放队列为空',
   'playlist.noPlaylists': '暂无歌单',
   'playlist.namePlaceholder': '歌单名称',
   'playlist.trackUnit': '首',
@@ -663,7 +668,7 @@ const zh: Record<string, string> = {
   'playlist.na': 'N/A',
   'playlist.deleteSelected': '删除选中 ({n})',
   'playlist.addFilesHint': '请从歌单标签页添加文件',
-  'playlist.emptyHint': '添加文件、文件夹或 CUE 文件以开始播放',
+  'playlist.emptyHint': '去「媒体库」双击歌曲或点「播放全部」即可开始',
 
   // Track info dialog
   'trackInfo.title': '标题',
@@ -1238,6 +1243,11 @@ const en: Record<string, string> = {
   'library.addAlbumToQueue': 'Add to queue',
   'library.editAlbum': 'Edit album',
   'library.playAll': 'Play All',
+  'library.fillTags': 'Fill tags',
+  'library.fillTagsTitle': 'Fill missing title/artist from filenames (Artist - Title)',
+  'library.fillTagsDone': 'Filled {n} tracks from filenames',
+  'library.fillTagsFailed': '{n} file writes failed',
+  'library.fillTagsNoSep': '{n} filenames could not be parsed',
   'playlist.queueTitle': 'Play Queue',
   'context.playNext': 'Play Next',
   'toast.playNext': 'Inserted as next up',
@@ -1248,7 +1258,7 @@ const en: Record<string, string> = {
   // Playlist
   'playlist.track': 'Track',
   'playlist.duration': 'Duration',
-  'playlist.noTracks': 'Playlist is empty',
+  'playlist.noTracks': 'Play queue is empty',
   'playlist.noPlaylists': 'No playlists yet',
   'playlist.namePlaceholder': 'Playlist name',
   'playlist.trackUnit': '',
@@ -1428,7 +1438,7 @@ const en: Record<string, string> = {
   'playlist.na': 'N/A',
   'playlist.deleteSelected': 'Delete Selected ({n})',
   'playlist.addFilesHint': 'Add files from the Playlist tab',
-  'playlist.emptyHint': 'Add files, folders, or CUE sheets to begin',
+  'playlist.emptyHint': 'Open the Library tab and double-click a track, or hit Play All, to begin',
 
   // Track info dialog
   'trackInfo.title': 'Title',

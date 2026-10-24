@@ -370,6 +370,10 @@ pub struct AppState {
     /// "[TAURI] Couldn't find callback id" warnings.
     /// Reset to false by `load_session` on the next mount.
     pub frontend_reloading: Arc<AtomicBool>,
+    /// Debounce flag for scheduled session saves (queue churn writes at most
+    /// once per 3s window instead of on every mutation). Guards against
+    /// hard-killed processes silently losing the queue/playlist state.
+    pub session_save_pending: Arc<AtomicBool>,
     /// Media library handle (opened lazily on first scan/query).
     /// The inner `Option` is `None` until the user triggers a scan or
     /// library_* command for the first time.
@@ -579,6 +583,7 @@ impl AppState {
             playlist_order: Mutex::new(Vec::new()),
             active_playlist: Mutex::new(String::new()),
             frontend_reloading: Arc::new(AtomicBool::new(false)),
+            session_save_pending: Arc::new(AtomicBool::new(false)),
             media_library: Arc::new(Mutex::new(None)),
             library_roots: Mutex::new(Vec::new()),
             synced_folders: Mutex::new(std::collections::HashMap::new()),

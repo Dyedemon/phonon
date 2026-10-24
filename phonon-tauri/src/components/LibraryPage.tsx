@@ -15,7 +15,7 @@ import AlbumDetailPage from './library/AlbumDetailPage'
 import MetadataEditModal from './library/MetadataEditModal'
 import AlbumEditModal from './library/AlbumEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
-import { getRoots, getTracks, listAlbums, listArtists } from '../api/library'
+import { fillTagsFromFilename, getRoots, getTracks, listAlbums, listArtists } from '../api/library'
 import { addToQueue, clearQueue, playNext } from '../api/queue'
 import { playIndex } from '../api/player'
 
@@ -88,6 +88,7 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   const [hasRoots, setHasRoots] = useState<boolean | null>(null)
   const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
   const [editingAlbum, setEditingAlbum] = useState<{ id: number; title: string } | null>(null)
+  const [filling, setFilling] = useState(false)
 
   // Fetch tracks + albums + artists on mount and when retryKey changes.
   useEffect(() => {
@@ -310,6 +311,32 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
               {'\u25B6'} {t('library.playAll', 'Play All')}
             </button>
           )}
+          {/* 从文件名补全缺失的标题/艺术家（Artist - Title 格式） */}
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={filling}
+            onClick={async () => {
+              setFilling(true)
+              try {
+                const [filled, noSep, failed] = await fillTagsFromFilename()
+              // 后端 emit 的是 Tauri 事件，前端监听的是 window CustomEvent —— 补齐通道
+              window.dispatchEvent(new CustomEvent('library-changed'))
+                let msg = t('library.fillTagsDone', 'Filled {n} tracks').replace('{n}', String(filled))
+                const extras: string[] = []
+                if (failed > 0) extras.push(t('library.fillTagsFailed', '{n} file writes failed').replace('{n}', String(failed)))
+                if (noSep > 0) extras.push(t('library.fillTagsNoSep', '{n} filenames could not be parsed').replace('{n}', String(noSep)))
+                if (extras.length > 0) msg += ' / ' + extras.join(' / ')
+                addToast?.(msg, 'info')
+              } catch (e) {
+                addToast?.(String(e), 'error')
+              } finally {
+                setFilling(false)
+              }
+            }}
+            title={t('library.fillTagsTitle', '从文件名补全缺失的标题/艺术家（Artist - Title 格式）')}
+          >
+            {'\u270E'} {t('library.fillTags', '补全标签')}
+          </button>
         </div>
       )}
 
