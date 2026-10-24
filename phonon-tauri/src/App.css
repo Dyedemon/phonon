@@ -3189,7 +3189,7 @@ textarea::placeholder {
   padding: 0 12px;
   box-sizing: border-box;
   /* 半透明衬底：自定义背景下保持文字可读，同时不完全遮住背景 */
-  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
 }
 
 .track-row:hover {

@@ -380,24 +380,33 @@ export default function TrackTable({
 
   return (
     <div className="track-table-wrap" style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      {/* Header row */}
-      <div className="track-row track-header" style={{ height: 36, fontWeight: 600, fontSize: 'var(--text-sm)', opacity: 0.7 }}>
-        <div className="col-cover">{t('library.colCover', '◐')}</div>
-        <div className="col-num">#</div>
-        <div className="col-title">{t('library.colTitle', '标题')}</div>
-        <div className="col-artist">{t('library.subtab.artists')}</div>
-        <div className="col-album">{t('library.subtab.albums')}</div>
-        <div className="col-duration">⏱</div>
-        <div className="col-format">fmt</div>
-        <div className="col-fav">{subTab === 'recent' ? t('library.lastPlayed') : '★'}</div>
-      </div>
-
       <div
         ref={containerRef}
         className="track-table-body"
         onScroll={handleScroll}
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative' }}
       >
+        {/* Header row — 放进滚动容器内 sticky：与数据行共用滚动条宽度，
+            列才严格对齐（此前表头在容器外，被 142 行的滚动条推偏 16px） */}
+        <div
+          className="track-row track-header"
+          style={{
+            height: 36, fontWeight: 600, fontSize: 'var(--text-sm)', opacity: 0.85,
+            position: 'sticky', top: 0, zIndex: 2,
+            background: 'var(--bg-card, #14141e)',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <div className="col-cover">{t('library.colCover', '◐')}</div>
+          <div className="col-num">#</div>
+          <div className="col-title">{t('library.colTitle', '标题')}</div>
+          <div className="col-artist">{t('library.subtab.artists')}</div>
+          <div className="col-album">{t('library.subtab.albums')}</div>
+          <div className="col-duration">⏱</div>
+          <div className="col-format">fmt</div>
+          <div className="col-fav">{subTab === 'recent' ? t('library.lastPlayed') : '♡'}</div>
+        </div>
+
         {total === 0 ? (
           <div className="empty-state" style={{ padding: 24, textAlign: 'center' }}>
             <div className="icon">{'\uD83C\uDFB5'}</div>
