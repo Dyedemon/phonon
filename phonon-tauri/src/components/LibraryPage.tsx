@@ -116,8 +116,27 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
   }, [retryKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for library-changed events (favorite/rating toggled elsewhere).
+  // 播放统计（play-stats）只做行级局部更新——全量重拉会让列表闪烁并
+  // 丢失滚动位置与多选；其它（收藏/评分/编辑）仍走整表重拉。
   useEffect(() => {
-    const handler = () => setRetryKey((k) => k + 1)
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { kind?: string; trackId?: number }
+        | undefined
+      if (detail?.kind === 'play-stats' && detail.trackId != null) {
+        const tid = detail.trackId
+        const now = Math.floor(Date.now() / 1000)
+        setTracks((arr) =>
+          arr.map((tr) =>
+            tr.id === tid
+              ? { ...tr, play_count: (tr.play_count ?? 0) + 1, last_played_at: now }
+              : tr,
+          ),
+        )
+        return
+      }
+      setRetryKey((k) => k + 1)
+    }
     window.addEventListener('library-changed', handler)
     return () => window.removeEventListener('library-changed', handler)
   }, [])

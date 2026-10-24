@@ -119,9 +119,31 @@ export default function Playlist({ onUpdate, compact: _compact, addToast: _addTo
 
   // 库数据变化（媒体库里收藏/评分/元数据编辑）后重解析队列行的缓存，
   // 否则队列行停留在入队那一刻的快照。
+  // play-stats（每首歌的播放记录）只更新对应单行——队列上百首逐个
+  // getTrackByPath 每首歌来一遍太浪费。
   useEffect(() => {
     let cancelled = false
-    const handler = () => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { kind?: string; path?: string }
+        | undefined
+      if (detail?.kind === 'play-stats' && detail.path) {
+        const p = detail.path
+        void (async () => {
+          try {
+            const info = await getTrackByPath(p)
+            if (cancelled) return
+            if (info) {
+              setTrackMap((prev) => {
+                const next = new Map(prev)
+                next.set(p, info)
+                return next
+              })
+            }
+          } catch { /* not in library */ }
+        })()
+        return
+      }
       void (async () => {
         const paths = [...trackMap.keys()]
         if (paths.length === 0) return

@@ -1094,9 +1094,11 @@ function App() {
         const track = await invoke<{ id: number } | null>('library_get_track_by_path', { path })
         if (track?.id) {
           await invoke('library_record_play', { id: track.id })
-          // 播放历史变了 → 收藏/最近/播放次数相关的视图自行刷新
-          // （最近子页此前停留在打开时的快照，刚听完的歌不出现）。
-          window.dispatchEvent(new CustomEvent('library-changed'))
+          // 播放统计属于库数据，但每首歌一次全量重拉会让媒体库列表
+          // 闪烁/丢失滚动与多选——带 detail 的轻量事件，消费方局部更新。
+          window.dispatchEvent(new CustomEvent('library-changed', {
+            detail: { kind: 'play-stats', trackId: track.id, path },
+          }))
         }
       } catch {
         /* not in library or backend error — silently skip */
