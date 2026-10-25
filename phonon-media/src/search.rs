@@ -142,10 +142,10 @@ fn like_search(conn: &Connection, query: &str, limit: i64) -> Result<Vec<SearchR
                 t.play_count, t.last_played_at, t.added_at, t.updated_at
          FROM tracks t
          WHERE t.is_deleted = 0
-           AND (t.title LIKE ?1 ESCAPE '\'
-                OR t.artist LIKE ?1 ESCAPE '\'
-                OR t.album LIKE ?1 ESCAPE '\'
-                OR t.genre LIKE ?1 ESCAPE '\')
+           AND (t.title LIKE ?1 ESCAPE char(92)
+                OR t.artist LIKE ?1 ESCAPE char(92)
+                OR t.album LIKE ?1 ESCAPE char(92)
+                OR t.genre LIKE ?1 ESCAPE char(92))
          ORDER BY t.added_at DESC
          LIMIT ?2",
     )?;

@@ -28,6 +28,39 @@ use crate::thumbnails;
 ///   3. Never empty: if the name is empty or pinyin conversion produces zero
 ///      chars, return `"zzz-" + original name` so it sorts to the very end of
 ///      the list with other unhandled items (never loses grouping).
+/// Pinyin blob indexed by tracks_fts: title + artist + album concatenated
+/// (compute_sort_key per field, space-separated) so ASCII queries like
+/// \"chengdu\" match 成都 via FTS.
+/// 每个汉字取其拼音首字母，ASCII 单词取首字符：赵雷→zl、Aimer→a。
+/// 与全拼并排写入 FTS（'zhaolei zl'）：多音字场景（成都→全拼 chengdou）
+/// 用户按标准读音 chengdu 输入虽不中全拼，首字母缩写仍提供二次命中面。
+fn pinyin_initials(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if let Some(py) = ch.to_pinyin() {
+            out.push(py.plain().chars().next().unwrap_or('_'));
+        }
+    }
+    out
+}
+
+/// Pinyin blob indexed by tracks_fts: per field 全拼 + 首字母缩写，
+/// space-separated，让 \"chengdu\"/"zl\" 这类 ASCII 查询命中中文。
+pub fn track_fts_pinyin(title: Option<&str>, artist: Option<&str>, album: Option<&str>) -> String {
+    [title, artist, album]
+        .into_iter()
+        .flatten()
+        .flat_map(|s| {
+            let full = compute_sort_key(s);
+            let ab = pinyin_initials(s);
+            if ab.is_empty() { vec![full] } else { vec![full, ab] }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn compute_sort_key(name: &str) -> String {
     if name.is_empty() {
         return "zzz-empty".to_string();

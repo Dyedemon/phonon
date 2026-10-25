@@ -143,6 +143,125 @@ pub fn apply_migrations(conn: &Connection) -> Result<()> {
     // ──────────────────────────────────────────────────────────
     if current < 2 {
         set_user_version(conn, 2)?;
+        current = 2;
+    }
+    // ──────────────────────────────────────────────────────────
+    // v2 → v3: pinyin search. tracks gains `fts_pinyin` (Rust-computed
+    // pinyin of title+artist+album, maintained on write by the media
+    // layer); FTS is rebuilt to index it so "chengdu" finds 成都.
+    // ──────────────────────────────────────────────────────────
+    if current < 3 {
+        let col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'fts_pinyin'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !col {
+            conn.execute_batch("ALTER TABLE tracks ADD COLUMN fts_pinyin TEXT;")?;
+        }
+        // Populate from existing rows (pinyin of title/artist/album).
+        {
+            let mut stmt =
+                conn.prepare("SELECT id, title, artist, album FROM tracks WHERE fts_pinyin IS NULL")?;
+            let rows: Vec<(i64, Option<String>, Option<String>, Option<String>)> = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+                .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
+            drop(stmt);
+            for (id, title, artist, album) in rows {
+                let py = crate::library::track_fts_pinyin(title.as_deref(), artist.as_deref(), album.as_deref());
+                conn.execute(
+                    "UPDATE tracks SET fts_pinyin = ?1 WHERE id = ?2",
+                    rusqlite::params![py, id],
+                )?;
+            }
+        }
+        // Rebuild FTS with the pinyin column (schema change → drop & recreate
+        // virtual table + triggers, then repopulate).
+        conn.execute_batch(
+            "DROP TRIGGER IF EXISTS tracks_ai_fts;
+             DROP TRIGGER IF EXISTS tracks_ad_fts;
+             DROP TRIGGER IF EXISTS tracks_au_fts;
+             DROP TABLE IF EXISTS tracks_fts;
+             CREATE VIRTUAL TABLE tracks_fts USING fts5(
+                 title, artist, album, genre, fts_pinyin,
+                 content='tracks', content_rowid='id',
+                 tokenize='unicode61 remove_diacritics 2'
+             );
+             CREATE TRIGGER tracks_ai_fts AFTER INSERT ON tracks BEGIN
+                 INSERT INTO tracks_fts(rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES (new.id, new.title, new.artist, new.album, new.genre, new.fts_pinyin);
+             END;
+             CREATE TRIGGER tracks_ad_fts AFTER DELETE ON tracks BEGIN
+                 INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre, old.fts_pinyin);
+             END;
+             CREATE TRIGGER tracks_au_fts AFTER UPDATE ON tracks BEGIN
+                 INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre, old.fts_pinyin);
+                 INSERT INTO tracks_fts(rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES (new.id, new.title, new.artist, new.album, new.genre, new.fts_pinyin);
+             END;
+             INSERT INTO tracks_fts(rowid, title, artist, album, genre, fts_pinyin)
+                 SELECT id, title, artist, album, genre, fts_pinyin FROM tracks;",
+        )?;
+        set_user_version(conn, 3)?;
+    }
+    // ──────────────────────────────────────────────────────────
+    // v3 → v4: fts_pinyin gains the initials form (全拼+首字母双写) and
+    // fixes external-content column alignment (FTS column MUST be named
+    // exactly like the content-table column for rebuild/delete to work).
+    // Recompute every row's blob, then rebuild FTS under the aligned name.
+    // ──────────────────────────────────────────────────────────
+    if current < 4 {
+        {
+            let mut stmt = conn.prepare("SELECT id, title, artist, album FROM tracks")?;
+            let rows: Vec<(i64, Option<String>, Option<String>, Option<String>)> = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+                .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
+            drop(stmt);
+            for (id, title, artist, album) in rows {
+                let py = crate::library::track_fts_pinyin(
+                    title.as_deref(),
+                    artist.as_deref(),
+                    album.as_deref(),
+                );
+                conn.execute(
+                    "UPDATE tracks SET fts_pinyin = ?1 WHERE id = ?2",
+                    rusqlite::params![py, id],
+                )?;
+            }
+        }
+        conn.execute_batch(
+            "DROP TRIGGER IF EXISTS tracks_ai_fts;
+             DROP TRIGGER IF EXISTS tracks_ad_fts;
+             DROP TRIGGER IF EXISTS tracks_au_fts;
+             DROP TABLE IF EXISTS tracks_fts;
+             CREATE VIRTUAL TABLE tracks_fts USING fts5(
+                 title, artist, album, genre, fts_pinyin,
+                 content='tracks', content_rowid='id',
+                 tokenize='unicode61 remove_diacritics 2'
+             );
+             CREATE TRIGGER tracks_ai_fts AFTER INSERT ON tracks BEGIN
+                 INSERT INTO tracks_fts(rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES (new.id, new.title, new.artist, new.album, new.genre, new.fts_pinyin);
+             END;
+             CREATE TRIGGER tracks_ad_fts AFTER DELETE ON tracks BEGIN
+                 INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre, old.fts_pinyin);
+             END;
+             CREATE TRIGGER tracks_au_fts AFTER UPDATE ON tracks BEGIN
+                 INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre, old.fts_pinyin);
+                 INSERT INTO tracks_fts(rowid, title, artist, album, genre, fts_pinyin)
+                 VALUES (new.id, new.title, new.artist, new.album, new.genre, new.fts_pinyin);
+             END;
+             INSERT INTO tracks_fts(rowid, title, artist, album, genre, fts_pinyin)
+                 SELECT id, title, artist, album, genre, fts_pinyin FROM tracks;",
+        )?;
+        set_user_version(conn, 4)?;
     }
     // Keep legacy settings-table version in sync with PRAGMA (for one cycle,
     // then delete).

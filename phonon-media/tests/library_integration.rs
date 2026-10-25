@@ -669,8 +669,8 @@ fn schema_migration_v0_to_v2_adds_sort_key_indices_no_data_loss() {
     // 2. Apply migrations
     apply_migrations(&conn).unwrap();
 
-    // 3. Assert: user_version bumped to 2 (our release version target)
-    assert_eq!(user_version(&conn).unwrap(), 2, "migrate v0→v2 failed");
+    // 3. Assert: user_version bumped to the current schema version
+    assert_eq!(user_version(&conn).unwrap(), 4, "migrate v0→v2 failed");
     // 4. Assert: sort_key columns EXIST (PRAGMA table_info)
     let artist_has_sort: bool = conn
         .query_row(
