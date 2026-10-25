@@ -629,10 +629,10 @@ export default function PluginManager({ addToast }: PluginManagerProps) {
                     <div className="meta">
                       <span>SublimationScript</span>
                       <span className="meta-sep">|</span>
-                      <span>JS 视觉升华效果插件</span>
+                      <span>JS 可视化脚本宿主</span>
                     </div>
                     <div className="meta" style={{ marginTop: 2, color: 'var(--text-dim)' }}>
-                      放入 <code>plugins/vis/</code> 目录的视觉升华脚本，启用后可在导航栏按钮中切换模式
+                      放入 <code>plugins/vis/</code> 目录的可视化脚本（视觉升华面板在 v0.2.0 暂未随包启用）
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
