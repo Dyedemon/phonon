@@ -1854,6 +1854,7 @@ pub fn run() {
                         app.state::<AppState>(),
                         playlist.clone(),
                         folder.clone(),
+                        None, // 恢复 watcher 时不覆盖已有歌单内容
                     ) {
                         log::warn!(
                             "[folder-sync] Failed to restore watcher for '{}': {}",

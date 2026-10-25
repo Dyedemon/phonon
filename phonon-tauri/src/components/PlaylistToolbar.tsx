@@ -360,7 +360,7 @@ export default function PlaylistToolbar({ refreshTrigger, onUpdate, addToast }: 
       // add_to_queue，用户排好的队列被无声替换（142 首），且同步的
       // 曲目本来就会通过 sync_folder 进入歌单。
       // sync_folder must succeed — don't swallow errors
-      await invoke('sync_folder', { playlist: activePlaylist, path })
+      await invoke('sync_folder', { playlist: activePlaylist, path, paths: results.map((r: { uri: string }) => r.uri) })
       setSyncedFolder(path)
       onUpdate()
 

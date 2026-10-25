@@ -3159,6 +3159,7 @@ pub fn sync_folder(
     state: State<'_, AppState>,
     playlist: String,
     path: String,
+    paths: Option<Vec<String>>,
 ) -> Result<(), String> {
     use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -3245,7 +3246,15 @@ pub fn sync_folder(
     }
     drop(watcher_guard);
 
-    log::info!("[folder-sync] Playlist '{}' synced to: {}", playlist, path);
+    // 绑定后直接把目录曲目写入歌单内容——歌单的填充路径此前依赖
+    // 前端 add_to_queue（队列镜像），移除后歌单会一直是空的。
+    if let Some(paths) = &paths {
+        let mut playlists = state.playlists.lock().unwrap();
+        playlists.insert(playlist.clone(), paths.clone());
+    }
+    schedule_session_save(&app);
+
+    log::info!("[folder-sync] Playlist '{}' synced to: {} ({} tracks)", playlist, path, paths.as_ref().map(|p| p.len()).unwrap_or(0));
     Ok(())
 }
 
