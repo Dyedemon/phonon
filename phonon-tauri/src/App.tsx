@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useCallback, useRef } from 'react'
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, emitTo } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -16,6 +16,18 @@ import TitleBar from './components/TitleBar'
 import LyricsPage from './components/LyricsPage'
 import VisualizerPage from './components/VisualizerPage'
 import LibraryPage from './components/LibraryPage'
+// 视觉升华（VisModeButton / Depth3D）：v0.2.0 安装包不带，但 dev 环境保留
+// 完整入口供开发测试。整条链路都包在 import.meta.env.DEV 门控里——
+// release 构建时 DEV 恒为 false，JSX 分支与动态 import 调用点被 rollup
+// 整体摇掉，three.js chunk 不会进安装包。
+import VisModeButton, { type VisMode } from './components/VisModeButton'
+import { syncVisPluginStyles, startVisLoop, stopVisLoop } from './api/visModeHost'
+// three.js/R3F stack is only needed on the Depth3D tab — keep it out of the
+// initial bundle. DEV=false 时三元塌缩为 null，动态 import 调用点消失，
+// chunk 完全不生成（而不是生成了不加载）。
+const Depth3DPage = import.meta.env.DEV
+  ? lazy(() => import('./components/Depth3DPage'))
+  : null
 import { I18nContext, getTranslation, useI18n } from './i18n'
 import type { Lang } from './i18n'
 import { useThrottledCallback } from './hooks/useThrottle'
@@ -81,7 +93,7 @@ function safeGetCurrentWindow(): ReturnType<typeof getCurrentWindow> | null {
   try { return getCurrentWindow() } catch { return null }
 }
 
-type Tab = 'player' | 'library' | 'devices' | 'dsp' | 'extensions' | 'settings' | 'visualizer'
+type Tab = 'player' | 'library' | 'devices' | 'dsp' | 'extensions' | 'settings' | 'visualizer' | 'depth3d'
 
 interface PlaybackState {
   state: string
@@ -285,8 +297,33 @@ function App() {
   }, [])
 
 
-  // 视觉升华（VisModeButton / Depth3D）在 v0.2.0 移除，仅摘除 UI 入口与
-  // 状态——组件文件保留在仓库，未来重新启用时恢复引用即可。
+  // 视觉升华状态机：仅 dev 环境生效（见文件头 DEV 门控说明）。
+  // hooks 不能条件调用——非 DEV 下状态恒为安全默认值，各回调变 no-op，
+  // JSX 分支被摇掉，整条链路零开销。
+  const [visPluginEnabled, setVisPluginEnabled] = useState<boolean>(() => {
+    if (!import.meta.env.DEV) return false
+    try {
+      const raw = localStorage.getItem('phonon-enabled-vis-scripts')
+      const arr = raw ? JSON.parse(raw) : []
+      // 只认视觉升华插件本身（vis_mode.js）：启用其他可视化脚本
+      // （纯 canvas 2D 脚本）不应召唤视觉升华按钮，也不该注入它的样式。
+      return Array.isArray(arr) && arr.includes('vis_mode.js')
+    } catch { return false }
+  })
+  const [visMode, setVisModeState] = useState<VisMode>(() => {
+    if (!import.meta.env.DEV) return 'none'
+    try {
+      const saved = localStorage.getItem('phonon-vis-mode')
+      if (saved === 'none' || saved === 'quality' || saved === 'depth3d'
+        || saved === 'depth4d' || saved === 'depth5d') return saved
+      // 旧版模式名（视觉系统统一前的存储）→ 新名迁移
+      if (saved === 'off') return 'none'
+      if (saved === 'classic' || saved === 'cosmos') return 'quality'
+    } catch { /* ignore */ }
+    return 'none'
+  })
+  // 视觉增强总开关：每次启动应用都强制默认关闭（用户明确要求），与 visMode 的"上次选择"分离
+  const [visActive, setVisActive] = useState<boolean>(false)
   const [showLyricsPage, setShowLyricsPage] = useState(false)
   const [coverUrl, setCoverUrl] = useState<string | null>(null)
   const [desktopLyricsOpen, setDesktopLyricsOpen] = useState(false)
@@ -663,11 +700,123 @@ function App() {
       document.documentElement.style.setProperty('--sans', savedFontFamily)
     }
 
-    // 视觉升华 v0.2.0 移除：清理可能残留的旧版 attribute，避免旧安装
-    // 升级后样式仍然生效。
-    document.documentElement.removeAttribute('data-vis-mode')
-    document.documentElement.removeAttribute('data-vis-active')
+    // 视觉升华初始化（仅 dev 生效；release 走清理路径）：
+    // - localStorage 仅用于"记住用户上次选了哪种模式"（visMode state + phonon-vis-mode 写入）
+    // - 是否实际应用样式，完全取决于 React state `visActive`（默认关闭，不读存储）
+    // - 为保证刷新后"开关显示关闭 && 效果也关闭"：初始化时永远不把 quality 写进 <html data-vis-mode>，
+    //   只有 depthXX（维度/3D 全屏页本身的独立界面）才需要保留 data-vis-mode 用于它们自己的页面标识。
+    if (!import.meta.env.DEV) {
+      document.documentElement.removeAttribute('data-vis-mode')
+      document.documentElement.removeAttribute('data-vis-active')
+    } else {
+      const vm = localStorage.getItem('phonon-vis-mode')
+      if (vm === 'cosmos') localStorage.setItem('phonon-vis-mode', 'quality')
+      const norm = vm === 'cosmos' ? 'quality' : vm
+      if (norm === 'depth3d' || norm === 'depth4d' || norm === 'depth5d') {
+        document.documentElement.setAttribute('data-vis-mode', norm)
+      } else {
+        document.documentElement.removeAttribute('data-vis-mode')
+      }
+      // 初始化自定义增强项到 <html data-vis-no-xxx>
+      const CUSTOM_KEYS = ['glass', 'shadows', 'buttons', 'titlebar', 'nav', 'inputs', 'scrollbar', 'borders']
+      try {
+        const raw = localStorage.getItem('phonon-vis-custom')
+        const arr = raw ? JSON.parse(raw) : CUSTOM_KEYS
+        const set = new Set(Array.isArray(arr) ? arr : CUSTOM_KEYS)
+        CUSTOM_KEYS.forEach(k => {
+          if (set.has(k)) document.documentElement.removeAttribute(`data-vis-no-${k}`)
+          else document.documentElement.setAttribute(`data-vis-no-${k}`, 'true')
+        })
+      } catch { /* ignore */ }
+    }
   }, [])
+
+  // 视觉增强模式切换（仅 dev 生效）：
+  // - 无论何时都同步写入 localStorage（"保存用户上次选择"要求）
+  // - 是否把模式应用到 <html data-vis-mode="..."> 进而影响渲染？
+  //   * 如果是 depth3d/4d/5d（维度/3D 全屏独立页）：始终同步 attribute（因为 3D 页本身需要识别）
+  //   * 如果是 quality 模式：**仅当 visActive=true（总开关已打开）才同步 attribute**，否则只存 storage 不渲染，
+  //     这样切换到质感提升不会在总开关关闭时意外"直接出现"效果
+  const setVisMode = useCallback((mode: VisMode) => {
+    if (!import.meta.env.DEV) return
+    setVisModeState(mode)
+    if (mode === 'none') {
+      // 「恢复原生界面」= 退出增强，不是一种可选效果：总开关必须一并关闭，
+      // 否则 pill 仍显示激活态（发光/均衡器/开着的 toggle）而界面毫无增强。
+      setVisActive(false)
+      document.documentElement.removeAttribute('data-vis-active')
+    }
+    if (mode === 'quality' || mode === 'depth3d' || mode === 'depth4d' || mode === 'depth5d') {
+      localStorage.setItem('phonon-vis-mode', mode)
+    } else {
+      localStorage.setItem('phonon-vis-mode', 'none')
+    }
+    if (mode === 'depth3d' || mode === 'depth4d' || mode === 'depth5d') {
+      document.documentElement.setAttribute('data-vis-mode', mode)
+    } else if (mode === 'quality') {
+      // 只有总开关开启时才应用 quality 到 HTML，保持"切换时不意外弹出"
+      if (visActive) document.documentElement.setAttribute('data-vis-mode', 'quality')
+      else document.documentElement.removeAttribute('data-vis-mode')
+    } else {
+      document.documentElement.removeAttribute('data-vis-mode')
+    }
+  }, [visActive])
+
+  // 总开关（仅 dev 生效）：控制 data-vis-active 属性 + 同步 quality 模式的实际渲染
+  // 关闭视觉增强：退出 3D 全屏页（如果在其中），但不改变 visMode 存储/state
+  const toggleVisActive = useCallback((on: boolean) => {
+    if (!import.meta.env.DEV) return
+    setVisActive(on)
+    if (on) {
+      document.documentElement.setAttribute('data-vis-active', 'true')
+      // 打开时：如果上次模式是 quality，现在才把它真正写到 HTML 上
+      if (visMode === 'quality') document.documentElement.setAttribute('data-vis-mode', 'quality')
+    } else {
+      document.documentElement.removeAttribute('data-vis-active')
+      if (visMode === 'quality') document.documentElement.removeAttribute('data-vis-mode')
+      // 关闭视觉增强 → 如果正在 3D 全屏页，退回到主播放器页（保留模式选择）
+      if (visMode === 'depth3d' || visMode === 'depth4d' || visMode === 'depth5d') {
+        if (activeTab === 'depth3d') {
+          setActiveTab('player')
+        }
+      }
+    }
+  }, [visMode, activeTab])
+
+  // 进入维度页（深度空间）：关闭主界面 tab，切到 depth3d 全屏 tab（仅 dev）
+  const handleEnterDimension = useCallback((mode: Exclude<VisMode, 'none' | 'quality'>) => {
+    if (!import.meta.env.DEV) return
+    if (mode === 'depth3d') {
+      setActiveTab('depth3d')
+      if (!visActive) {
+        setVisActive(true)
+        document.documentElement.setAttribute('data-vis-active', 'true')
+      }
+      setVisMode('depth3d')
+    }
+  }, [visActive, setVisMode])
+
+  // ── 视觉升华插件（plugins/vis/vis_mode.js）────────────────────────
+  // 插件自带全部 CSS（按钮 / 面板 / 质感模式 / 氛围光斑），宿主只负责
+  // 注入/移除样式与驱动帧循环——这就是"视觉"的统一体系：内置 3D 维度页
+  // 和插件质感效果共存，插件按同一契约即可扩展。
+  // 加载失败（文件缺失/损坏）时自愈为禁用，避免渲染出无样式按钮。
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    void syncVisPluginStyles(visPluginEnabled).then((ok) => {
+      if (!ok && visPluginEnabled) {
+        console.warn('[vis] 视觉升华插件加载失败，已自动禁用')
+        setVisPluginEnabled(false)
+      }
+    })
+  }, [visPluginEnabled])
+
+  // 插件帧循环（仅 dev）：质感模式激活期间运行，驱动插件的音频呼吸（--vis-* 变量）
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    if (visActive && visMode === 'quality') startVisLoop()
+    else stopVisLoop()
+  }, [visActive, visMode])
 
   // Initialisation: run once after mount with a small delay so Tauri's
   // frontend callback table is fully populated before issuing any commands.
@@ -1553,6 +1702,33 @@ function App() {
     return () => { if (unlistenFn) { try { unlistenFn() } catch {} } }
   }, [])
 
+  // Listen for visual enhancement plugin enable/disable changes（仅 dev）。
+  // 当插件被禁用（总开关关闭）时，必须连带关闭所有视觉增强效果，
+  // 否则 data-vis-mode 属性会残留在 <html> 上，界面仍保持提升质感。
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const handler = () => {
+      try {
+        const raw = localStorage.getItem('phonon-enabled-vis-scripts')
+        const arr = raw ? JSON.parse(raw) : []
+        const enabled = Array.isArray(arr) && arr.includes('vis_mode.js')
+        setVisPluginEnabled(enabled)
+        if (!enabled) {
+          // 总开关关闭 → 一键关闭所有视觉增强，恢复默认界面
+          setVisActive(false)
+          document.documentElement.removeAttribute('data-vis-active')
+          setVisMode('none')
+          // 若正停留在可视化页，跳回扩展页
+          if (activeTab === 'visualizer') {
+            setActiveTab('extensions')
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('vis-scripts-enabled-changed', handler)
+    return () => window.removeEventListener('vis-scripts-enabled-changed', handler)
+  }, [activeTab, setVisMode])
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'player', label: t('tab.player') },
     { id: 'library', label: t('tab.library') },
@@ -1589,9 +1765,37 @@ function App() {
             {tab.label}
           </button>
         ))}
+        {/* 视觉升华按钮：dev 专属（release 摇掉，安装包不含） */}
+        {import.meta.env.DEV && visPluginEnabled && (
+          <VisModeButton
+            enabled={visPluginEnabled}
+            active={visActive}
+            mode={visMode}
+            onToggle={toggleVisActive}
+            onModeChange={setVisMode}
+            onEnterDimension={handleEnterDimension}
+          />
+        )}
       </div>
 
       <div className="content">
+        {/* depth3d 全屏页：dev 专属（release 摇掉，three.js chunk 不生成） */}
+        {import.meta.env.DEV && activeTab === 'depth3d' && Depth3DPage && (
+          <Suspense fallback={<div style={{ padding: 40, opacity: 0.5 }}>…</div>}>
+            <Depth3DPage
+              onClose={() => setActiveTab('player')}
+              playback={playback}
+              volume={volume}
+              onVolumeChange={handleVolume}
+              coverUrl={coverUrl}
+              visActive={visActive}
+              visMode={visMode}
+              onToggleVisActive={toggleVisActive}
+              onVisModeChange={setVisMode}
+              onEnterDimension={handleEnterDimension}
+            />
+          </Suspense>
+        )}
 
         {/* ── 临时诊断：命中测试探针（已定位问题，撤除；需要时从
             git 历史取回 5c00109 的 HitTestProbe 组件） ── */}

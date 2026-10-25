@@ -632,7 +632,7 @@ export default function PluginManager({ addToast }: PluginManagerProps) {
                       <span>JS 可视化脚本宿主</span>
                     </div>
                     <div className="meta" style={{ marginTop: 2, color: 'var(--text-dim)' }}>
-                      放入 <code>plugins/vis/</code> 目录的可视化脚本（视觉升华面板在 v0.2.0 暂未随包启用）
+                      放入 <code>plugins/vis/</code> 目录的可视化脚本（启用 vis_mode.js 后出现视觉升华面板；面板仅在 dev 构建中提供，v0.2.0 安装包不含）
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
