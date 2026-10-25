@@ -62,8 +62,11 @@ jobs:
       - name: cargo-deny licenses + bans + advisories (§14 Gate)
         run: cargo deny check licenses bans advisories
 
-      - name: cargo test (workspace)
-        run: cargo test --workspace --release
+      # 不带 --workspace：default-members 已排除 Windows-only crate
+      # （phonon-winui/installer/uninstaller，见根 Cargo.toml），
+      # --workspace 会无视该排除，在 Linux 上编译 Win32 代码直接失败。
+      - name: cargo test (default-members, release)
+        run: cargo test --release
 
       # ── §16 Release Gate：打包前阻断性检查 ──
       - name: (Gate) Updater pubkey 非占位检查
