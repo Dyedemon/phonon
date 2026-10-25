@@ -530,59 +530,61 @@ pub fn write_metadata_to_file(
             ));
         };
 
-    // (ItemKey, Option<String>) pairs — Some("") clears, Some(v) writes.
-    let string_fields: [(&ItemKey, &Option<String>); 6] = [
-        (&ItemKey::TrackTitle, &partial.title),
-        (&ItemKey::TrackArtist, &partial.artist),
-        (&ItemKey::AlbumTitle, &partial.album),
-        (&ItemKey::AlbumArtist, &partial.album_artist),
-        (&ItemKey::Genre, &partial.genre),
-        (&ItemKey::Composer, &partial.composer),
-    ];
-    for (key, value) in string_fields {
-        match value {
-            Some(v) if v.is_empty() => tag.remove_key(key),
-            Some(v) => {
-                tag.insert_text(key.clone(), v.clone());
+        // (ItemKey, Option<String>) pairs — Some("") clears, Some(v) writes.
+        let string_fields: [(&ItemKey, &Option<String>); 6] = [
+            (&ItemKey::TrackTitle, &partial.title),
+            (&ItemKey::TrackArtist, &partial.artist),
+            (&ItemKey::AlbumTitle, &partial.album),
+            (&ItemKey::AlbumArtist, &partial.album_artist),
+            (&ItemKey::Genre, &partial.genre),
+            (&ItemKey::Composer, &partial.composer),
+        ];
+        for (key, value) in string_fields {
+            match value {
+                Some(v) if v.is_empty() => tag.remove_key(key),
+                Some(v) => {
+                    tag.insert_text(key.clone(), v.clone());
+                }
+                None => {}
             }
-            None => {}
         }
-    }
-    // Numeric fields are stored as tag strings.
-    let number_fields: [(&ItemKey, &Option<i32>); 3] = [
-        (&ItemKey::Year, &partial.year),
-        (&ItemKey::TrackNumber, &partial.track_number),
-        (&ItemKey::DiscNumber, &partial.disc_number),
-    ];
-    for (key, value) in number_fields {
-        match value {
-            Some(v) if *v <= 0 => tag.remove_key(key),
-            Some(v) => {
-                tag.insert_text(key.clone(), v.to_string());
+        // Numeric fields are stored as tag strings.
+        let number_fields: [(&ItemKey, &Option<i32>); 3] = [
+            (&ItemKey::Year, &partial.year),
+            (&ItemKey::TrackNumber, &partial.track_number),
+            (&ItemKey::DiscNumber, &partial.disc_number),
+        ];
+        for (key, value) in number_fields {
+            match value {
+                Some(v) if *v <= 0 => tag.remove_key(key),
+                Some(v) => {
+                    tag.insert_text(key.clone(), v.to_string());
+                }
+                None => {}
             }
-            None => {}
         }
-    }
-    // Cover art: replace the front-cover picture. MIME from magic bytes.
-    if let Some(bytes) = &partial.cover_bytes {
-        if !bytes.is_empty() {
-            let mime = if bytes.starts_with(&[0xFF, 0xD8]) {
-                Some(lofty::picture::MimeType::Jpeg)
-            } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-                Some(lofty::picture::MimeType::Png)
-            } else {
-                Some(lofty::picture::MimeType::Unknown(String::from("image/webp")))
-            };
-            let picture = lofty::picture::Picture::new_unchecked(
-                lofty::picture::PictureType::CoverFront,
-                mime,
-                None,
-                bytes.clone(),
-            );
-            tag.remove_picture_type(lofty::picture::PictureType::CoverFront);
-            tag.push_picture(picture);
+        // Cover art: replace the front-cover picture. MIME from magic bytes.
+        if let Some(bytes) = &partial.cover_bytes {
+            if !bytes.is_empty() {
+                let mime = if bytes.starts_with(&[0xFF, 0xD8]) {
+                    Some(lofty::picture::MimeType::Jpeg)
+                } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+                    Some(lofty::picture::MimeType::Png)
+                } else {
+                    Some(lofty::picture::MimeType::Unknown(String::from(
+                        "image/webp",
+                    )))
+                };
+                let picture = lofty::picture::Picture::new_unchecked(
+                    lofty::picture::PictureType::CoverFront,
+                    mime,
+                    None,
+                    bytes.clone(),
+                );
+                tag.remove_picture_type(lofty::picture::PictureType::CoverFront);
+                tag.push_picture(picture);
+            }
         }
-    }
     } // end of &mut tagged scope
 
     tagged

@@ -1506,7 +1506,10 @@ impl PlaybackEngine {
     }
 
     pub fn get_shuffle(&self) -> bool {
-        self.shuffle_state.lock().map(|s| s.enabled).unwrap_or(false)
+        self.shuffle_state
+            .lock()
+            .map(|s| s.enabled)
+            .unwrap_or(false)
     }
 
     /// In-place Fisher–Yates with the same time+pid seeded xorshift used by
@@ -4202,7 +4205,10 @@ mod shuffle_tests {
     use super::*;
 
     fn state(enabled: bool) -> Arc<Mutex<ShuffleState>> {
-        Arc::new(Mutex::new(ShuffleState { enabled, order: None }))
+        Arc::new(Mutex::new(ShuffleState {
+            enabled,
+            order: None,
+        }))
     }
 
     #[test]
@@ -4263,8 +4269,14 @@ mod shuffle_tests {
     #[test]
     fn disabled_returns_none() {
         let st = state(false);
-        assert_eq!(PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 5, 0), None);
-        assert_eq!(PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 5, 2), None);
+        assert_eq!(
+            PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 5, 0),
+            None
+        );
+        assert_eq!(
+            PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 5, 2),
+            None
+        );
     }
 
     #[test]
@@ -4287,7 +4299,10 @@ mod shuffle_tests {
         let st = state(true);
         let a = PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 6, 2).unwrap();
         let b = PlaybackEngine::shuffled_next(&st, PlaybackMode::Normal, 6, a).unwrap();
-        assert_eq!(PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 6, b), Some(a));
+        assert_eq!(
+            PlaybackEngine::shuffled_prev(&st, PlaybackMode::Normal, 6, b),
+            Some(a)
+        );
     }
 
     #[test]

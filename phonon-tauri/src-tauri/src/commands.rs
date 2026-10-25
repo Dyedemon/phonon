@@ -5211,7 +5211,9 @@ pub fn library_fill_tags_from_filename(
     })?;
     log::info!(
         "[media] filename tag fill: filled={} no_separator={} write_failed={}",
-        stats.0, stats.1, stats.2
+        stats.0,
+        stats.1,
+        stats.2
     );
     schedule_session_save(&app);
     let _ = app.emit("library-changed", ());
@@ -5855,7 +5857,9 @@ pub fn library_group_albums_by_artist(
     })?;
     log::info!(
         "[media] artist album grouping: grouped={} albums={} failed={}",
-        stats.0, stats.1, stats.2
+        stats.0,
+        stats.1,
+        stats.2
     );
     let _ = app.emit("library-changed", ());
     Ok(stats)
