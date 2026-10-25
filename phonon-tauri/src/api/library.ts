@@ -311,6 +311,11 @@ export function fillTagsFromFilename(): Promise<[number, number, number]> {
   return invoke('library_fill_tags_from_filename');
 }
 
+/** Group album-less tracks into per-artist albums. [grouped, albums, failed] */
+export function groupAlbumsByArtist(): Promise<[number, number, number]> {
+  return invoke('library_group_albums_by_artist');
+}
+
 /** List tracks with optional filter/pagination. */
 export function getTracks(filter?: TrackFilter): Promise<TrackInfo[]> {
   return invoke('library_get_tracks', { filter: filter ?? null });

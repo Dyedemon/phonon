@@ -15,7 +15,7 @@ import AlbumDetailPage from './library/AlbumDetailPage'
 import MetadataEditModal from './library/MetadataEditModal'
 import AlbumEditModal from './library/AlbumEditModal'
 import type { LibraryTrack, AlbumInfo, ArtistInfo } from '../api/library'
-import { fillTagsFromFilename, getRoots, getTracks, listAlbums, listArtists } from '../api/library'
+import { fillTagsFromFilename, getRoots, getTracks, groupAlbumsByArtist, listAlbums, listArtists } from '../api/library'
 import { addToQueue, clearQueue, playNext } from '../api/queue'
 import { playIndex } from '../api/player'
 
@@ -355,6 +355,32 @@ export default function LibraryPage({ addToast, onNavigate, currentTrackPath, on
             title={t('library.fillTagsTitle', '从文件名补全缺失的标题/艺术家（Artist - Title 格式）')}
           >
             {'\u270E'} {t('library.fillTags', '补全标签')}
+          </button>
+          {/* 按艺术家归专辑：无专辑的歌归入以艺术家命名的专辑（单曲库适用） */}
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={filling}
+            onClick={async () => {
+              setFilling(true)
+              try {
+                const [grouped, albums, failed] = await groupAlbumsByArtist()
+                window.dispatchEvent(new CustomEvent('library-changed'))
+                let msg = t('library.groupAlbumsDone', '已归入 {n} 首 · 共 {a} 张专辑')
+                  .replace('{n}', String(grouped))
+                  .replace('{a}', String(albums))
+                if (failed > 0) {
+                  msg += ' / ' + t('library.fillTagsFailed', '{n} file writes failed').replace('{n}', String(failed))
+                }
+                addToast?.(msg, 'info')
+              } catch (e) {
+                addToast?.(String(e), 'error')
+              } finally {
+                setFilling(false)
+              }
+            }}
+            title={t('library.groupAlbumsTitle', '把没有专辑的歌按艺术家归入同名专辑')}
+          >
+            {'\u25CE'} {t('library.groupAlbums', '归入专辑')}
           </button>
         </div>
       )}

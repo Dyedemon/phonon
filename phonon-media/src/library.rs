@@ -1067,6 +1067,78 @@ impl MediaLibrary {
         Ok((filled, no_separator, write_failed))
     }
 
+    /// Group tracks into per-artist albums: every track with an artist but
+    /// no album gets `album = artist`, `album_artist = artist`.
+    ///
+    /// For flat "singles collection" libraries (one directory, no per-album
+    /// folders) this is the only meaningful grouping. Existing albums are
+    /// never touched. The currently playing file skips the filesystem write
+    /// (frame-offset risk) but still gets the DB row updated.
+    /// Returns (grouped_tracks, albums_total, file_write_failed).
+    pub fn group_albums_by_artist(
+        &self,
+        skip_path: Option<&str>,
+    ) -> Result<(usize, usize, usize)> {
+        use phonon_codec::PartialMeta;
+
+        let conn = self.conn.lock().map_err(poison)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, file_path, artist FROM tracks
+             WHERE is_deleted = 0
+               AND artist IS NOT NULL AND artist != ''
+               AND (album IS NULL OR album = '')",
+        )?;
+        let rows: Vec<(i64, String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
+        drop(stmt);
+
+        let mut grouped = 0usize;
+        let mut write_failed = 0usize;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        for (id, file_path, artist) in rows {
+            conn.execute(
+                "UPDATE tracks SET album = ?1, album_artist = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![artist, now, id],
+            )?;
+            grouped += 1;
+
+            let playing = skip_path
+                .map(|p| p.split('#').next().unwrap_or(p))
+                .map(|p| {
+                    file_path
+                        .split('#')
+                        .next()
+                        .unwrap_or(&file_path)
+                        .eq_ignore_ascii_case(p)
+                })
+                .unwrap_or(false);
+            if !playing {
+                let partial = PartialMeta {
+                    album: Some(artist.clone()),
+                    album_artist: Some(artist),
+                    ..Default::default()
+                };
+                if let Err(e) = phonon_codec::write_metadata_to_file(&file_path, &partial) {
+                    write_failed += 1;
+                    log::warn!("[media] artist album group: write failed for {file_path}: {e}");
+                }
+            }
+        }
+
+        if grouped > 0 {
+            crate::library::rebuild_aggregates(&conn)?;
+        }
+        let albums: i64 = conn
+            .query_row("SELECT COUNT(*) FROM albums", [], |r| r.get(0))
+            .unwrap_or(0);
+        Ok((grouped, albums as usize, write_failed))
+    }
+
     /// Bind raw image bytes as the cover for a track. Hashes via
     /// `thumbnails::ensure_thumbnail`, writes `tracks.cover_hash`, returns
     /// the SHA1 hash. Caller is responsible for content-type validation —

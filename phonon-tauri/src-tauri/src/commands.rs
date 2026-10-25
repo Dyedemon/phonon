@@ -5840,6 +5840,27 @@ pub fn library_edit_metadata_partial(
     })
 }
 
+/// Group tracks lacking an album into per-artist albums (album = artist).
+/// Meant for flat singles libraries. Returns (grouped, albums_total, failed).
+#[tauri::command]
+pub fn library_group_albums_by_artist(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(usize, usize, usize), String> {
+    ensure_library_open(&state)?;
+    let skip = state.engine.current_track();
+    let stats = with_library(&state, |lib| {
+        lib.group_albums_by_artist(skip.as_deref())
+            .map_err(|e| e.to_string())
+    })?;
+    log::info!(
+        "[media] artist album grouping: grouped={} albums={} failed={}",
+        stats.0, stats.1, stats.2
+    );
+    let _ = app.emit("library-changed", ());
+    Ok(stats)
+}
+
 /// Bind raw cover bytes (JPEG/PNG) as the cover for a track. Returns the
 /// SHA1 hash of the encoded WEBP thumbnail.
 #[tauri::command]
