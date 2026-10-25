@@ -384,6 +384,32 @@ function CameraRig({ audioRef, theme }: {
   const beatShakeRef = useRef(0)
   const lastBeatRef = useRef(false)
 
+  // 开场运镜：3.5s 从高远处 ease-out 滑入默认机位，期间禁用轨道控制，
+  // 结束后无缝交还。"一眼惊艳"八成取决于开场镜头
+  const introTRef = useRef(0)
+  const introFromRef = useRef(new THREE.Vector3(14, 18, 34))
+  const introEndRef = useRef(new THREE.Vector3(0, isRhythm ? 3.2 : 3.8, isRhythm ? 6 : 12.5))
+  const introLookRef = useRef(new THREE.Vector3(0, isRhythm ? 0.2 : -0.5, 0))
+
+  // 开场运镜：相机先摆到高远起点并禁用轨道控制
+  useEffect(() => {
+    if (!controls || !camera) return
+    camera.position.copy(introFromRef.current)
+    camera.lookAt(introLookRef.current)
+    ;(controls as any).enabled = false
+  }, [controls, camera])
+
+  // 开场运镜推进：ease-out cubic 滑入，结束后交还轨道控制。
+  // 相位累积原则同样适用：只写 camera.position，hooks 全部留在组件顶层
+  useFrame((_s, delta) => {
+    if (introTRef.current >= 1) return
+    introTRef.current = Math.min(1, introTRef.current + delta / 3.5)
+    const k = 1 - Math.pow(1 - introTRef.current, 3)
+    camera.position.lerpVectors(introFromRef.current, introEndRef.current, k)
+    camera.lookAt(introLookRef.current)
+    if (introTRef.current >= 1 && controls) (controls as any).enabled = true
+  })
+
   // 主题切换时重置相机位置
   useEffect(() => {
     if (prevThemeRef.current !== theme) {
@@ -428,3 +454,4 @@ function CameraRig({ audioRef, theme }: {
   })
   return null
 }
+

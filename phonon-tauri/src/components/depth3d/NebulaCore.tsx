@@ -445,6 +445,16 @@ export function NebulaCore({ audioRef, quality }: Props) {
         float lightAngle = dot(vec2(cos(angle), sin(angle)), uLightDir.xz);
         float ringLight = 0.6 + 0.4 * max(0.0, lightAngle);
 
+        // 行星投影：从环片元沿光源方向的射线是否穿过行星球（组空间解析）。
+        // 环倾角极小，局部坐标近似组空间；行星心在组原点、半径 4.5。
+        // 这是土星照片最具辨识度的特征——背光侧的暗楔
+        float pL = dot(vPos, uLightDir);
+        float d2 = dot(vPos, vPos) - pL * pL;
+        float shadowAmt = (pL < 0.0 && d2 < 20.25)
+          ? 1.0 - smoothstep(18.0, 23.0, d2)
+          : 0.0;
+        ringLight *= mix(1.0, 0.12, shadowAmt);
+
         float profile = 1.0 - t * 0.35;
 
         // 节拍波：beat 触发（JS 置 uWave=0），亮环从内缘向外缘传播 ~1.2s，
