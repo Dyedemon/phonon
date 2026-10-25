@@ -870,7 +870,11 @@ pub struct UserPlaylist {
 }
 
 #[tauri::command]
-pub fn create_playlist(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub fn create_playlist(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     let mut playlists = state.playlists.lock().unwrap();
     if playlists.contains_key(&name) {
         return Err(format!("Playlist '{}' already exists", name));
@@ -878,12 +882,18 @@ pub fn create_playlist(state: State<'_, AppState>, name: String) -> Result<(), S
     playlists.insert(name.clone(), Vec::new());
     // New playlists go at the bottom
     state.playlist_order.lock().unwrap().push(name.clone());
+    drop(playlists);
+    schedule_session_save(&app);
     log::info!("Created playlist: {}", name);
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_playlist(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub fn delete_playlist(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     if is_system_playlist(&name) {
         return Err(format!("Cannot delete system playlist '{}'", name));
     }
@@ -905,12 +915,18 @@ pub fn delete_playlist(state: State<'_, AppState>, name: String) -> Result<(), S
         .lock()
         .map_err(|e| e.to_string())?
         .retain(|n| n != &name);
+    drop(playlists);
+    schedule_session_save(&app);
     log::info!("Deleted playlist: {}", name);
     Ok(())
 }
 
 #[tauri::command]
-pub fn switch_playlist(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub fn switch_playlist(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     // Save current queue to active playlist before switching
     {
         let active = state.active_playlist.lock().unwrap();
@@ -940,6 +956,7 @@ pub fn switch_playlist(state: State<'_, AppState>, name: String) -> Result<(), S
     state.engine.set_queue_index(paths.len());
 
     *state.active_playlist.lock().unwrap() = name.clone();
+    schedule_session_save(&app);
     log::info!("Switched to playlist: {} ({} tracks)", name, paths.len());
     Ok(())
 }
@@ -949,7 +966,11 @@ pub fn switch_playlist(state: State<'_, AppState>, name: String) -> Result<(), S
 /// "收藏" → favorites_only, sorted by added_at DESC.
 /// "最近播放" → last_played_at DESC, limit 200.
 #[tauri::command]
-pub fn switch_system_playlist(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub fn switch_system_playlist(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
     // Save current queue to active playlist before switching
     {
         let active = state.active_playlist.lock().unwrap();
@@ -996,6 +1017,7 @@ pub fn switch_system_playlist(state: State<'_, AppState>, name: String) -> Resul
     state.engine.set_queue_index(tracks.len());
 
     *state.active_playlist.lock().unwrap() = name.clone();
+    schedule_session_save(&app);
     log::info!(
         "Switched to system playlist: {} ({} tracks)",
         name,
@@ -1101,6 +1123,7 @@ pub fn get_active_playlist(state: State<'_, AppState>) -> Result<String, String>
 
 #[tauri::command]
 pub fn rename_playlist(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     old_name: String,
     new_name: String,
@@ -1127,11 +1150,17 @@ pub fn rename_playlist(
             order[pos] = new_name.clone();
         }
     }
+    drop(playlists);
+    schedule_session_save(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn reorder_playlists(state: State<'_, AppState>, order: Vec<String>) -> Result<(), String> {
+pub fn reorder_playlists(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    order: Vec<String>,
+) -> Result<(), String> {
     let playlists = state.playlists.lock().unwrap();
     // Verify all names exist in playlists
     for name in &order {
@@ -1141,12 +1170,16 @@ pub fn reorder_playlists(state: State<'_, AppState>, order: Vec<String>) -> Resu
     }
     drop(playlists);
     *state.playlist_order.lock().unwrap() = order;
+    schedule_session_save(&app);
     log::info!("Playlist order updated");
     Ok(())
 }
 
 #[tauri::command]
-pub fn save_current_to_playlist(state: State<'_, AppState>) -> Result<(), String> {
+pub fn save_current_to_playlist(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let active = state.active_playlist.lock().unwrap();
     if active.is_empty() {
         return Err("No active playlist".into());
@@ -1157,6 +1190,9 @@ pub fn save_current_to_playlist(state: State<'_, AppState>) -> Result<(), String
     if let Some(pl) = playlists.get_mut(&*active) {
         *pl = paths;
     }
+    drop(playlists);
+    drop(active);
+    schedule_session_save(&app);
     Ok(())
 }
 
@@ -2165,13 +2201,35 @@ pub fn persist_session(state: &AppState) -> Result<(), String> {
     }
     drop(settings);
 
-    let queue = state.engine.queue_snapshot();
-    // Don't save empty queue to avoid overwriting a valid session
-    if queue.is_empty() {
-        return Ok(());
-    }
-    let position = state.engine.position();
-    let queue_idx = state.engine.queue_index();
+    let live_queue = state.engine.queue_snapshot();
+    let mut position = state.engine.position();
+    let mut queue_idx = state.engine.queue_index();
+    // 队列为空不再整体放弃写入：歌单与文件夹绑定也存在 session.json，
+    // 空队列用户对它们的修改此前会在退出时全部丢失。改为把上一次
+    // session 的队列字段原样带下去——空队列依旧无法清掉一个有效的
+    // 已存队列（原守卫的目的），但歌单/绑定修改能正常落盘。
+    let queue = if live_queue.is_empty() {
+        // 会话尚未从磁盘加载完成时不写：此时内存不代表用户意志，
+        // 带写会用空歌单覆盖磁盘上的旧数据（老守卫防的就是这个窗口）。
+        if !*state.session_loaded.lock().unwrap() {
+            return Ok(());
+        }
+        match saved_queue_fields() {
+            Some((q, p, i)) => {
+                let carried = match serde_json::from_value::<Vec<QueueItem>>(q) {
+                    Ok(q) => q,
+                    // 旧 session 损坏：维持老行为，放弃这次写入
+                    Err(_) => return Ok(()),
+                };
+                position = p;
+                queue_idx = i;
+                carried
+            }
+            None => Vec::new(),
+        }
+    } else {
+        live_queue
+    };
 
     // Snapshot enabled DSP processor IDs so their enable state survives restart
     let dsp_enabled: Vec<String> = state
@@ -2275,6 +2333,19 @@ pub fn persist_session(state: &AppState) -> Result<(), String> {
 #[tauri::command]
 pub fn save_session(state: State<'_, AppState>) -> Result<(), String> {
     persist_session(&state)
+}
+
+/// Read queue/position/queue_index back from the existing session.json so an
+/// empty live queue can carry them forward instead of wiping a valid session.
+fn saved_queue_fields() -> Option<(serde_json::Value, f64, usize)> {
+    let path = get_session_path().ok()?;
+    let bytes = std::fs::read(path).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    Some((
+        v.get("queue")?.clone(),
+        v.get("position")?.as_f64()?,
+        v.get("queue_index")?.as_u64()? as usize,
+    ))
 }
 
 /// Debounced session save: queue mutations schedule a write 3s out. Hard
@@ -3254,13 +3325,22 @@ pub fn sync_folder(
     }
     schedule_session_save(&app);
 
-    log::info!("[folder-sync] Playlist '{}' synced to: {} ({} tracks)", playlist, path, paths.as_ref().map(|p| p.len()).unwrap_or(0));
+    log::info!(
+        "[folder-sync] Playlist '{}' synced to: {} ({} tracks)",
+        playlist,
+        path,
+        paths.as_ref().map(|p| p.len()).unwrap_or(0)
+    );
     Ok(())
 }
 
 /// Unbind a playlist's synced folder and stop watching it (if no other playlist uses it).
 #[tauri::command]
-pub fn unsync_folder(state: State<'_, AppState>, playlist: String) -> Result<(), String> {
+pub fn unsync_folder(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    playlist: String,
+) -> Result<(), String> {
     use notify::Watcher;
 
     let removed_path = {
@@ -3284,6 +3364,7 @@ pub fn unsync_folder(state: State<'_, AppState>, playlist: String) -> Result<(),
                 *watcher_guard = None;
             }
         }
+        schedule_session_save(&app);
         log::info!(
             "[folder-sync] Playlist '{}' unsynced from: {}",
             playlist,
@@ -3406,6 +3487,11 @@ pub fn sync_folder_for_playlist(
         if !to_remove_indices.is_empty() || added > 0 {
             emit_state_snapshot(&app, &state);
         }
+    }
+
+    // 歌单内容（和可能的活跃队列）刚刚变了——落盘，否则硬退出丢这批增删
+    if !to_add.is_empty() || !to_remove.is_empty() {
+        schedule_session_save(&app);
     }
 
     Ok(serde_json::json!({"added": to_add.len(), "removed": to_remove.len()}))

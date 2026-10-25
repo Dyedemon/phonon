@@ -4243,7 +4243,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4257,7 +4257,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-codec"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -4273,7 +4273,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "cpal",
@@ -4292,7 +4292,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-installer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "log",
@@ -4305,7 +4305,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-media"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "log",
@@ -4323,7 +4323,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-plugin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "log",
@@ -4336,7 +4336,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-plugin-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4344,7 +4344,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-source"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "log",
@@ -4367,7 +4367,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-winui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "log",
  "windows 0.58.0",

@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - 同步文件夹不再把整个目录塞进播放队列（替换用户队列的事故根源）
+- 歌单增删改/切换/排序/文件夹绑定与重扫描补齐会话落盘；空队列下这些修改
+  不再因"空队列不保存"守卫而在退出时丢失（写回时带上一次已存队列字段，
+  并加 session_loaded 守卫防启动窗口期覆盖）
 - 媒体库表头与数据行对齐（sticky 表头）；收藏图标全局统一为爱心
 - LIKE 搜索回退路径的 ESCAPE 子句错误（此前触发即报错）
 - FTS5 external-content 列名对齐（rebuild 路径）
