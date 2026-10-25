@@ -98,10 +98,10 @@ jobs:
         include:
           - platform: 'windows'
             os: 'windows-latest'
-            args: '--bundles wix,nsis,portable'
+            args: '--bundles msi,nsis'
           - platform: 'macos-universal'
             os: 'macos-14'
-            args: '--bundles dmg,pkg --target universal-apple-darwin'
+            args: '--bundles dmg --target universal-apple-darwin'
           - platform: 'linux'
             os: 'ubuntu-22.04'
             args: '--bundles deb,appimage'
@@ -237,8 +237,15 @@ jobs:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
           "
 
+      # ---- npm ci（必须在 THIRDPARTY 之前：license-checker 要扫 node_modules）----
+      - name: NPM install (production)
+        working-directory: phonon-tauri
+        run: npm ci
+
       # ---- 生成 THIRDPARTY_LICENSES.txt（发布前必须归档）----
+      # shell: bash —— Windows runner 默认 pwsh，跑不了 bash 的 if ! 语法
       - name: Install cargo-about (for Rust license listing)
+        shell: bash
         run: |
           if ! command -v cargo-about &>/dev/null; then
             cargo install cargo-about --locked || echo "::warning::cargo-about install failed, will use placeholder"
@@ -254,9 +261,9 @@ jobs:
             "cargo-about not installed, appending placeholder." |
               Set-Content THIRDPARTY_LICENSES_cargo.txt
           }
-          # NPM 侧（npx 自动解析 node_modules/.bin 下的 license-checker，跨平台）
+          # NPM 侧（npx 自动解析 node_modules/.bin 下的 license-checker，跨平台用 / 分隔）
           Set-Location phonon-tauri
-          npx license-checker --production --csv --out ..\NPM_LICENSES.csv 2>$null
+          npx license-checker --production --csv --out ../NPM_LICENSES.csv 2>$null
           Set-Location ..
           $parts = @()
           if (Test-Path THIRDPARTY_LICENSES_cargo.txt) {
@@ -269,14 +276,10 @@ jobs:
           }
           if ($parts.Count -gt 0) {
             $base = Get-Content THIRDPARTY_LICENSES.txt -Raw
-            "$base`n`n$($parts -join \"`n\")" | Set-Content THIRDPARTY_LICENSES.txt
+            $joined = $parts -join "`n"
+            "$base`n`n$joined" | Set-Content THIRDPARTY_LICENSES.txt
           }
           Remove-Item THIRDPARTY_LICENSES_cargo.txt, NPM_LICENSES.csv -ErrorAction SilentlyContinue
-
-      # ---- npm ci ----
-      - name: NPM install (production)
-        working-directory: phonon-tauri
-        run: npm ci
 
       # ── Tauri Build（核心步骤：tauri-apps/tauri-action）──
       # 会自动：1) 前/后端构建  2) 三平台 bundle 打包
@@ -302,7 +305,7 @@ jobs:
           foreach ($b in $bundles) {
             Write-Output "Stapling: $($b.FullName)"
             xcrun stapler staple "$($b.FullName)"
-            if ($_.Extension -eq '.app' -or $_.Extension -eq '.dmg') {
+            if ($b.Extension -eq '.app' -or $b.Extension -eq '.dmg') {
               spctl --assess --type execute -vv "$($b.FullName)"
             }
           }
@@ -482,7 +485,8 @@ jobs:
             }
           }
           if ($failed.Count -gt 0) {
-            Write-Error "§16 Gate 3 failed: Authenticode 校验失败`n$($failed -join \"`n\")"
+            $failedJoined = $failed -join "`n"
+            Write-Error "§16 Gate 3 failed: Authenticode 校验失败`n$failedJoined"
             exit 1
           }
           Write-Output "Gate 3 PASSED (Authenticode verified for $($winBundles.Count) Windows bundles)"
