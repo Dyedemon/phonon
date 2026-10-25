@@ -55,7 +55,11 @@ pub fn track_fts_pinyin(title: Option<&str>, artist: Option<&str>, album: Option
         .flat_map(|s| {
             let full = compute_sort_key(s);
             let ab = pinyin_initials(s);
-            if ab.is_empty() { vec![full] } else { vec![full, ab] }
+            if ab.is_empty() {
+                vec![full]
+            } else {
+                vec![full, ab]
+            }
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -1085,9 +1089,7 @@ impl MediaLibrary {
                     artist: artist.clone(),
                     ..Default::default()
                 };
-                if let Err(e) =
-                    phonon_codec::write_metadata_to_file(&file_path, &partial)
-                {
+                if let Err(e) = phonon_codec::write_metadata_to_file(&file_path, &partial) {
                     write_failed += 1;
                     log::warn!("[media] filename tag fill: write failed for {file_path}: {e}");
                 }
@@ -1108,10 +1110,7 @@ impl MediaLibrary {
     /// never touched. The currently playing file skips the filesystem write
     /// (frame-offset risk) but still gets the DB row updated.
     /// Returns (grouped_tracks, albums_total, file_write_failed).
-    pub fn group_albums_by_artist(
-        &self,
-        skip_path: Option<&str>,
-    ) -> Result<(usize, usize, usize)> {
+    pub fn group_albums_by_artist(&self, skip_path: Option<&str>) -> Result<(usize, usize, usize)> {
         use phonon_codec::PartialMeta;
 
         let conn = self.conn.lock().map_err(poison)?;

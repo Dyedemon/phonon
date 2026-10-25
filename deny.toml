@@ -54,6 +54,15 @@ ignore = [
     { id = "RUSTSEC-2025-0075", reason = "unmaintained transitive crate" },
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained; via image→ravif→rav1e" },
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained; transitive" },
+    # zip 0.6 via phonon-installer — 解包的是我们自己的 app.zip（非对抗输入）；
+    # zip 9.x API 全重写，自研安装器迁移另排期
+    { id = "RUSTSEC-2026-0367", reason = "zip 0.6 via phonon-installer (own archive only)" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 0.6 via phonon-installer (own archive only)" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 0.6 via phonon-installer (own archive only)" },
+    # zvariant/zbus 系 unmaintained — tauri-plugin-single-instance 依赖，无升级路径
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained; via tauri-plugin-single-instance" },
+    { id = "RUSTSEC-2026-0371", reason = "zvariant unmaintained; via tauri-plugin-single-instance" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained; via tauri-plugin-single-instance" },
 ]
 
 [sources]

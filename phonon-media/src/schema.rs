@@ -164,14 +164,18 @@ pub fn apply_migrations(conn: &Connection) -> Result<()> {
         }
         // Populate from existing rows (pinyin of title/artist/album).
         {
-            let mut stmt =
-                conn.prepare("SELECT id, title, artist, album FROM tracks WHERE fts_pinyin IS NULL")?;
+            let mut stmt = conn
+                .prepare("SELECT id, title, artist, album FROM tracks WHERE fts_pinyin IS NULL")?;
             let rows: Vec<(i64, Option<String>, Option<String>, Option<String>)> = stmt
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
                 .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
             drop(stmt);
             for (id, title, artist, album) in rows {
-                let py = crate::library::track_fts_pinyin(title.as_deref(), artist.as_deref(), album.as_deref());
+                let py = crate::library::track_fts_pinyin(
+                    title.as_deref(),
+                    artist.as_deref(),
+                    album.as_deref(),
+                );
                 conn.execute(
                     "UPDATE tracks SET fts_pinyin = ?1 WHERE id = ?2",
                     rusqlite::params![py, id],

@@ -54,7 +54,7 @@ ringbuf = "0.5"
 rustfft = "6.2"
 
 # WASM runtime
-wasmtime = "47"
+wasmtime = "48"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
