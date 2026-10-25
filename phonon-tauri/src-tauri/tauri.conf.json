@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Phonon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.phonon.app",
   "build": {
     "frontendDist": "../dist",
@@ -15,13 +15,21 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "deb", "appimage", "app", "dmg"],
+    "targets": [
+      "nsis",
+      "deb",
+      "appimage",
+      "app",
+      "dmg"
+    ],
     "category": "Music",
     "shortDescription": "Phonon — High-fidelity audio platform",
     "longDescription": "纯净、跨平台、高保真、可扩展的音频应用开发平台。原生 Bit-Perfect 音频链路、插件系统与三维沉浸空间化。",
@@ -53,12 +61,18 @@
       "timestampUrl": "http://timestamp.digicert.com",
       "tsp": false,
       "wix": {
-        "language": ["zh-CN", "en-US"],
+        "language": [
+          "zh-CN",
+          "en-US"
+        ],
         "template": null
       },
       "nsis": {
         "displayLanguageSelector": true,
-        "languages": ["SimpChinese", "English"],
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
         "installerHooks": "./windows/hooks.nsh"
@@ -76,7 +90,9 @@
         "desktopTemplate": null,
         "section": "sound",
         "priority": "optional",
-        "provides": ["phonon"],
+        "provides": [
+          "phonon"
+        ],
         "conflicts": [],
         "replaces": []
       },

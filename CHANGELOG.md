@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-25
+
+### Added
+- **媒体库**：Library tab 上线——全部/收藏/最近/专辑/艺术家/流派六个子页、FTS+拼音搜索、
+  多选批量操作（Ctrl 加选 / Shift 范围选）、右键菜单（播放/下一首播放/加入队列/编辑元数据）
+- **上下文播放**：媒体库双击 = 当前视图整表入队连播；列表子页"播放全部"；专辑页以专辑为上下文
+- **下一首播放**（Play Next）：插到当前曲之后不打断播放，随机模式下同样生效（洗牌序即时重排）
+- **标签文件回写**（lofty）：元数据编辑保存时写回音频文件本体（FLAC/MP3/M4A 等按容器分派），
+  库与文件双向一致；播放中的文件自动跳过文件侧写入
+- **批量整理工具**："补全标签"（从 Artist - Title 文件名回填标题/艺术家）与
+  "归入专辑"（无专辑曲目按艺术家归组），库+文件同步写入
+- **拼音搜索**：FTS 索引收录全拼+首字母（zhaolei / zl 均可命中赵雷），多音字有首字母兜底
+- **快速找歌**：播放器侧栏搜索框，搜到即插播，免跨 tab
+- **随机播放**：与循环模式四选一的互斥菜单；RepeatAll 洗牌整轮不重复
+- **播放队列正名**：队列标题、空态引导、批量管理（多选删除/搜索过滤）
+- 队列变更即时会话落盘（防托盘隐藏+强杀丢队列）；曲目行的播放统计轻量局部更新
+
+### Fixed
+- 同步文件夹不再把整个目录塞进播放队列（替换用户队列的事故根源）
+- 媒体库表头与数据行对齐（sticky 表头）；收藏图标全局统一为爱心
+- LIKE 搜索回退路径的 ESCAPE 子句错误（此前触发即报错）
+- FTS5 external-content 列名对齐（rebuild 路径）
+- TrackFilter 裸 bool 字段缺 serde(default) 导致库查询整体失败
+- 媒体库 roots 跨重启持久化；编辑弹窗/专辑页文案与接线修正
+- 启动 logo 死锁（会话保存后台线程与 load_session 锁序环）
+- CHANGELOG 移除未实现的 ASIO 宣称
+
 ## [0.1.0] - 2026-08-29
 
 ### Added

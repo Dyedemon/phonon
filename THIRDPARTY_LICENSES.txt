@@ -17,8 +17,1297 @@ For more information, see: https://www.steinberg.net/developers/
 
 ## Rust Crate Licenses (cargo-about)
 
-(Appended by `cargo about generate about.hbs` during release build)
+Apache License 2.0
 
-## NPM Package Licenses (license-checker)
 
-(Appended by `npx license-checker --production --csv` during release build)
+---
+Apache License 2.0
+
+
+---
+Apache License 2.0
+
+
+---
+Apache License 2.0
+
+
+---
+Apache License 2.0
+
+
+---
+Apache License 2.0
+
+
+---
+Apache License 2.0
+
+
+---
+Apache License 2.0
+
+
+---
+BSD 2-Clause &quot;Simplified&quot; License
+
+
+---
+BSD 2-Clause &quot;Simplified&quot; License
+
+
+---
+BSD 2-Clause &quot;Simplified&quot; License
+
+
+---
+BSD 2-Clause &quot;Simplified&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+
+---
+Creative Commons Zero v1.0 Universal
+
+
+---
+Creative Commons Zero v1.0 Universal
+
+
+---
+Community Data License Agreement Permissive 2.0
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+ISC License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+MIT License
+
+
+---
+Mozilla Public License 2.0
+
+
+---
+Mozilla Public License 2.0
+
+
+---
+Mozilla Public License 2.0
+
+
+---
+University of Illinois/NCSA Open Source License
+
+
+---
+Unicode License v3
+
+
+---
+Unicode License v3
+
+
+---
+zlib License
+
+
+---
+
+## NPM Package Licenses (license-checker CSV)
+
+module name,version,license,repository
+"module name","license","repository"
+"@babel/runtime@7.29.7","MIT","https://github.com/babel/babel"
+"@mediapipe/tasks-vision@0.10.17","Apache-2.0",""
+"@monogrid/gainmap-js@3.4.0","MIT","https://github.com/MONOGRID/gainmap-js"
+"@react-three/drei@10.7.8","MIT","https://github.com/pmndrs/drei"
+"@react-three/fiber@9.7.0","MIT","https://github.com/pmndrs/react-three-fiber"
+"@react-three/postprocessing@3.0.4","MIT","https://github.com/pmndrs/react-postprocessing"
+"@tauri-apps/api@2.11.1","Apache-2.0 OR MIT","https://github.com/tauri-apps/tauri"
+"@tauri-apps/plugin-dialog@2.7.1","MIT OR Apache-2.0","https://github.com/tauri-apps/plugins-workspace"
+"@tauri-apps/plugin-fs@2.5.1","MIT OR Apache-2.0","https://github.com/tauri-apps/plugins-workspace"
+"@tauri-apps/plugin-global-shortcut@2.3.2","MIT OR Apache-2.0","https://github.com/tauri-apps/plugins-workspace"
+"@tauri-apps/plugin-log@2.8.0","MIT OR Apache-2.0","https://github.com/tauri-apps/plugins-workspace"
+"@tauri-apps/plugin-shell@2.3.5","MIT OR Apache-2.0","https://github.com/tauri-apps/plugins-workspace"
+"@tauri-apps/plugin-updater@2.10.1","MIT OR Apache-2.0","https://github.com/tauri-apps/plugins-workspace"
+"@tweenjs/tween.js@23.1.3","MIT","https://github.com/tweenjs/tween.js"
+"@types/draco3d@1.4.10","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@types/offscreencanvas@2019.7.3","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@types/react-reconciler@0.28.9","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@types/react@19.2.17","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@types/stats.js@0.17.4","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@types/three@0.170.0","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@types/webxr@0.5.24","MIT","https://github.com/DefinitelyTyped/DefinitelyTyped"
+"@use-gesture/core@10.3.1","MIT","https://github.com/pmndrs/use-gesture"
+"@use-gesture/react@10.3.1","MIT","https://github.com/pmndrs/use-gesture"
+"@webgpu/types@0.1.71","BSD-3-Clause","https://github.com/gpuweb/types"
+"base64-js@1.5.1","MIT","https://github.com/beatgammit/base64-js"
+"bidi-js@1.0.3","MIT","https://github.com/lojjic/bidi-js"
+"buffer@6.0.3","MIT","https://github.com/feross/buffer"
+"camera-controls@3.1.2","MIT","https://github.com/yomotsu/camera-controls"
+"cookie@1.1.1","MIT","https://github.com/jshttp/cookie"
+"cross-env@7.0.3","MIT","https://github.com/kentcdodds/cross-env"
+"cross-spawn@7.0.6","MIT","https://github.com/moxystudio/node-cross-spawn"
+"csstype@3.2.3","MIT","https://github.com/frenic/csstype"
+"detect-gpu@5.0.70","MIT","https://github.com/pmndrs/detect-gpu"
+"draco3d@1.5.7","Apache-2.0","https://github.com/google/draco"
+"fflate@0.6.11","MIT","https://github.com/101arrowz/fflate"
+"fflate@0.8.3","MIT","https://github.com/101arrowz/fflate"
+"glsl-noise@0.0.0","MIT","https://github.com/hughsk/glsl-noise"
+"hls.js@1.6.17","Apache-2.0","https://github.com/video-dev/hls.js"
+"ieee754@1.2.1","BSD-3-Clause","https://github.com/feross/ieee754"
+"immediate@3.0.6","MIT","https://github.com/calvinmetcalf/immediate"
+"is-promise@2.2.2","MIT","https://github.com/then/is-promise"
+"isexe@2.0.0","ISC","https://github.com/isaacs/isexe"
+"its-fine@2.0.0","MIT","https://github.com/pmndrs/its-fine"
+"lie@3.3.0","MIT","https://github.com/calvinmetcalf/lie"
+"maath@0.10.8","MIT",""
+"maath@0.6.0","MIT",""
+"meshline@3.3.1","MIT",""
+"meshoptimizer@0.18.1","MIT","https://github.com/zeux/meshoptimizer"
+"n8ao@1.10.3","ISC","https://github.com/N8python/n8ao"
+"path-key@3.1.1","MIT","https://github.com/sindresorhus/path-key"
+"phonon-tauri@0.2.0","UNLICENSED",""
+"postprocessing@6.39.4","Zlib","https://github.com/pmndrs/postprocessing"
+"potpack@1.0.2","ISC","https://github.com/mapbox/potpack"
+"promise-worker-transferable@1.0.4","Apache-2.0","https://github.com/terikon/promise-worker-transferable"
+"react-dom@19.2.7","MIT","https://github.com/facebook/react"
+"react-router-dom@7.18.0","MIT","https://github.com/remix-run/react-router"
+"react-router@7.18.0","MIT","https://github.com/remix-run/react-router"
+"react-use-measure@2.1.7","MIT","https://github.com/pmndrs/react-use-measure"
+"react@19.2.7","MIT","https://github.com/facebook/react"
+"require-from-string@2.0.2","MIT","https://github.com/floatdrop/require-from-string"
+"scheduler@0.27.0","MIT","https://github.com/facebook/react"
+"set-cookie-parser@2.7.2","MIT","https://github.com/nfriedly/set-cookie-parser"
+"shebang-command@2.0.0","MIT","https://github.com/kevva/shebang-command"
+"shebang-regex@3.0.0","MIT","https://github.com/sindresorhus/shebang-regex"
+"stats-gl@2.4.2","MIT","https://github.com/RenaudRohlinger/stats-gl"
+"stats.js@0.17.0","MIT","https://github.com/mrdoob/stats.js"
+"suspend-react@0.1.3","MIT","https://github.com/pmndrs/suspend-react"
+"three-mesh-bvh@0.8.3","MIT","https://github.com/gkjohnson/three-mesh-bvh"
+"three-stdlib@2.36.1","MIT","https://github.com/pmndrs/three-stdlib"
+"three@0.170.0","MIT","https://github.com/mrdoob/three.js"
+"troika-three-text@0.52.5","MIT","https://github.com/protectwise/troika"
+"troika-three-utils@0.52.5","MIT","https://github.com/protectwise/troika"
+"troika-worker-utils@0.52.0","MIT","https://github.com/protectwise/troika"
+"tunnel-rat@0.1.2","MIT","https://github.com/pmndrs/tunnel-rat"
+"use-sync-external-store@1.6.0","MIT","https://github.com/facebook/react"
+"utility-types@3.11.0","MIT","https://github.com/piotrwitek/utility-types"
+"webgl-constants@1.1.1","MIT*",""
+"webgl-sdf-generator@1.1.1","MIT","https://github.com/lojjic/webgl-sdf-generator"
+"which@2.0.2","ISC","https://github.com/isaacs/node-which"
+"zustand@4.5.7","MIT","https://github.com/pmndrs/zustand"
+"zustand@5.0.14","MIT","https://github.com/pmndrs/zustand"
