@@ -737,8 +737,14 @@ function App() {
   //   * 如果是 depth3d/4d/5d（维度/3D 全屏独立页）：始终同步 attribute（因为 3D 页本身需要识别）
   //   * 如果是 quality 模式：**仅当 visActive=true（总开关已打开）才同步 attribute**，否则只存 storage 不渲染，
   //     这样切换到质感提升不会在总开关关闭时意外"直接出现"效果
+  // 进入维度页（全屏 3D）前记住当时的界面形态——模式互斥（depth3d 会
+  // 顶掉质感样式），但退出时应还原用户原本的选择
+  const prevUiModeRef = useRef<VisMode>('none')
   const setVisMode = useCallback((mode: VisMode) => {
     if (!import.meta.env.DEV) return
+    if ((mode === 'depth3d' || mode === 'depth4d' || mode === 'depth5d') && visMode === 'quality') {
+      prevUiModeRef.current = 'quality'
+    }
     setVisModeState(mode)
     if (mode === 'none') {
       // 「恢复原生界面」= 退出增强，不是一种可选效果：总开关必须一并关闭，
@@ -760,7 +766,7 @@ function App() {
     } else {
       document.documentElement.removeAttribute('data-vis-mode')
     }
-  }, [visActive])
+  }, [visActive, visMode])
 
   // 总开关（仅 dev 生效）：控制 data-vis-active 属性 + 同步 quality 模式的实际渲染
   // 关闭视觉增强：退出 3D 全屏页（如果在其中），但不改变 visMode 存储/state
@@ -1783,7 +1789,12 @@ function App() {
         {import.meta.env.DEV && activeTab === 'depth3d' && Depth3DPage && (
           <Suspense fallback={<div style={{ padding: 40, opacity: 0.5 }}>…</div>}>
             <Depth3DPage
-              onClose={() => setActiveTab('player')}
+              onClose={() => {
+                setActiveTab('player')
+                // 从三维承空退出：还原进入前的界面形态（质感提升会被
+                // depth3d 模式顶掉——互斥，但退出应还原用户的样式选择）
+                setVisMode(prevUiModeRef.current)
+              }}
               playback={playback}
               volume={volume}
               onVolumeChange={handleVolume}
