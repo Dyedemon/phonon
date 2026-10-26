@@ -59,6 +59,17 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip 0.6 via phonon-installer (own archive only)" },
     { id = "RUSTSEC-2026-0368", reason = "zip 0.6 via phonon-installer (own archive only)" },
     { id = "RUSTSEC-2026-0369", reason = "zip 0.6 via phonon-installer (own archive only)" },
+    # zstd 家族四连（zstd-rs 集中发布）— 经 wasmtime 48 编译缓存
+    # （0391/0398/0410）与 zip 0.6 → phonon-installer（0403）引入。
+    # 漏洞前提均为对抗性输入或跨信任域复用（多用户 context 共享、损坏
+    # legacy frame、wasm 沙箱内分配器损坏——公告明示不越沙箱），
+    # Phonon 是单用户本地进程：缓存/归档数据单一来源且非对抗输入，
+    # wasm 内容是用户自己的插件。zstd 0.13 / zstd-safe 5+7 / zstd-sys
+    # 2.0 都锁死在 zip 0.6 / wasmtime 48 的版本约束上，随二者大版本升级解除。
+    { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 via wasmtime 48 cache; local single-user; bump with wasmtime 49" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7 via wasmtime 48 seekable cache; local single-user; bump with wasmtime 49" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 5 via zip 0.6 → phonon-installer (own archive); bump with zip migration" },
+    { id = "RUSTSEC-2026-0410", reason = "zstd-sys 2.0 via wasmtime 48; corruption contained in wasm sandbox; bump with wasmtime 49" },
     # zvariant/zbus 系 unmaintained — tauri-plugin-single-instance 依赖，无升级路径
     { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained; via tauri-plugin-single-instance" },
     { id = "RUSTSEC-2026-0371", reason = "zvariant unmaintained; via tauri-plugin-single-instance" },
