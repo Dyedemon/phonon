@@ -514,14 +514,17 @@ interface CornerButtonProps {
   onClick: () => void
   icon: React.ReactNode
   highlight?: boolean
+  /** 标记为某功能的 toggle 按钮：外点关闭逻辑会跳过它（避免先关后开） */
+  toggleTag?: string
 }
 
-export function CornerButton({ position, visible, onClick, icon, highlight }: CornerButtonProps) {
+export function CornerButton({ position, visible, onClick, icon, highlight, toggleTag }: CornerButtonProps) {
   const isLeft = position === 'top-left'
 
   return (
     <button
       onClick={onClick}
+      data-console-toggle={toggleTag}
       style={{
         position: 'absolute',
         top: 22,
@@ -618,6 +621,22 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
   const [surroundMode, setSurroundMode] = useState<string>('off')
   const [pendingQueueIndex, setPendingQueueIndex] = useState<number | null>(null)
 
+  // 点击面板外自动关闭：window 级 pointerdown，目标不在面板内即关闭。
+  // 开关按钮（右上角）除外——pointerdown 先关、click 又会把它点开
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null
+      if (panelRef.current && target && !panelRef.current.contains(target)
+        && !(target.closest && target.closest('[data-console-toggle]'))) {
+        onClose()
+      }
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [open, onClose])
+
   // 设备 / DSP / 增强模式：面板打开时拉取一次（低频变化，不追事件）
   useEffect(() => {
     if (!open) return
@@ -713,7 +732,7 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
       />
 
       {/* 面板 */}
-      <div style={{
+      <div ref={panelRef} style={{
         position: 'absolute',
         top: 0,
         right: 0,
@@ -1652,6 +1671,7 @@ export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings,
         onClick={() => setPanelOpen(!panelOpen)}
         icon={panelOpen ? <IconClose /> : <IconMenu />}
         highlight={panelOpen}
+        toggleTag="console-toggle"
       />
 
       <BottomPlayBar

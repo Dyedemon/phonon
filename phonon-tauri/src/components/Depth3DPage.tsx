@@ -391,13 +391,7 @@ function CameraRig({ audioRef, theme }: {
   const introEndRef = useRef(new THREE.Vector3(0, isRhythm ? 3.2 : 3.8, isRhythm ? 6 : 12.5))
   const introLookRef = useRef(new THREE.Vector3(0, isRhythm ? 0.2 : -0.5, 0))
 
-  // 开场运镜：相机先摆到高远起点并禁用轨道控制
-  useEffect(() => {
-    if (!controls || !camera) return
-    camera.position.copy(introFromRef.current)
-    camera.lookAt(introLookRef.current)
-    ;(controls as any).enabled = false
-  }, [controls, camera])
+
 
   // 开场运镜推进：ease-out cubic 滑入，结束后交还轨道控制。
   // 相位累积原则同样适用：只写 camera.position，hooks 全部留在组件顶层
@@ -438,6 +432,20 @@ function CameraRig({ audioRef, theme }: {
       }
     }
   }, [theme, camera, controls])
+  // 开场运镜：相机摆到高远起点并禁用轨道控制（仅运镜进行中——
+  // 完成后主题切换重挂载的控制器保持启用并同步 target，否则
+  // 重启用路径被 early-return 绕过，视角会永久拖不动）
+  useEffect(() => {
+    if (!controls || !camera) return
+    if (introTRef.current >= 1) {
+      ;(controls as any).target.copy(targetBaseRef.current)
+      ;(controls as any).update?.()
+      return
+    }
+    camera.position.copy(introFromRef.current)
+    camera.lookAt(introLookRef.current)
+    ;(controls as any).enabled = false
+  }, [controls, camera])
 
   useFrame(() => {
     const d = audioRef.current
