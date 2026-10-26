@@ -300,6 +300,7 @@ function App() {
   // 视觉升华状态机：仅 dev 环境生效（见文件头 DEV 门控说明）。
   // hooks 不能条件调用——非 DEV 下状态恒为安全默认值，各回调变 no-op，
   // JSX 分支被摇掉，整条链路零开销。
+  const [visDiag, setVisDiag] = useState('—') // 视觉升华加载诊断（dev 临时）
   const [visPluginEnabled, setVisPluginEnabled] = useState<boolean>(() => {
     if (!import.meta.env.DEV) return false
     try {
@@ -809,10 +810,14 @@ function App() {
   // 加载失败（文件缺失/损坏）时自愈为禁用，避免渲染出无样式按钮。
   useEffect(() => {
     if (!import.meta.env.DEV) return
+    setVisDiag(visPluginEnabled ? 'loading' : 'off')
     void syncVisPluginStyles(visPluginEnabled).then((ok) => {
       if (!ok && visPluginEnabled) {
         console.warn('[vis] 视觉升华插件加载失败，已自动禁用')
         setVisPluginEnabled(false)
+        setVisDiag('load-failed')
+      } else {
+        setVisDiag(ok ? 'loaded' : 'off')
       }
     })
   }, [visPluginEnabled])
@@ -1771,6 +1776,16 @@ function App() {
             {tab.label}
           </button>
         ))}
+        {/* 加载诊断徽章（dev 临时）：VIS:开关/阶段——定位按钮不显示的环节 */}
+        {import.meta.env.DEV && (
+          <span title={'视觉升华加载诊断（临时）'} style={{
+            fontSize: 10, fontFamily: 'monospace', pointerEvents: 'none',
+            color: visDiag === 'loaded' ? 'rgba(120, 255, 180, 0.75)' : 'rgba(255, 170, 120, 0.8)',
+            alignSelf: 'center', marginLeft: 6, whiteSpace: 'nowrap',
+          }}>
+            VIS:{visPluginEnabled ? 'on' : 'off'}/{visDiag}
+          </span>
+        )}
         {/* 视觉升华按钮：dev 专属（release 摇掉，安装包不含） */}
         {import.meta.env.DEV && visPluginEnabled && (
           <VisModeButton
