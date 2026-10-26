@@ -218,10 +218,8 @@ export function RhythmVisualizer({ audioRef }: Props) {
           float inner = smoothstep(0.35, 0.25, d) * 0.5;
           // 中心填充（按下时）
           float fill = smoothstep(0.25, 0.0, d) * uActive * 0.6;
-          // 星形高光
-          float star = 0.0;
 
-          vec3 col = uColor * (outer + inner + fill + star);
+          vec3 col = uColor * (outer + inner + fill);
           float alpha = outer * 0.8 + inner * 0.5 + fill + uActive * 0.3;
 
           gl_FragColor = vec4(col, alpha);
@@ -288,6 +286,8 @@ export function RhythmVisualizer({ audioRef }: Props) {
     size: new Float32Array(MAX_BURSTS),
     nextIdx: 0,
   }), [])
+  // setColorAt 的复用色对象：避免每帧为每个音符分配（GC 压力）
+  const scratchColor = useMemo(() => new THREE.Color(), [])
 
   // 轨道底板（深色梯形，用简单材质保证可见）
   const trackFloorGeo = useMemo(() => {
@@ -298,6 +298,20 @@ export function RhythmVisualizer({ audioRef }: Props) {
     shape.lineTo(-FAR_WIDTH / 2, FAR_LINE_Z)
     shape.closePath()
     return new THREE.ShapeGeometry(shape)
+  }, [])
+
+  // 主题切出（卸载）时统一释放几何体与材质——R3F 对 props/primitive
+  // 形式不自动 dispose，与 NebulaCore/StarField 的泄漏同款问题
+  useEffect(() => () => {
+    noteGeo.dispose()
+    noteMat.dispose()
+    hitLineMat.dispose()
+    laneLineMat.dispose()
+    keyIndicatorMat.forEach((m) => m.dispose())
+    burstGeo.dispose()
+    burstMat.dispose()
+    laneLinesGeo.forEach((g) => g.dispose())
+    trackFloorGeo.dispose()
   }, [])
 
   // 轨道线几何体（用梯形）
@@ -360,7 +374,7 @@ export function RhythmVisualizer({ audioRef }: Props) {
       bestNote.hit = true
       const type = bestDist < 0.12 ? 'perfect' : 'good'
       triggerHitEffect(lane, laneColors[lane], type)
-      setHitEffects(prev => [...prev, { lane, time: t, type }])
+      setHitEffects(prev => [...prev.slice(-9), { lane, time: t, type }])
       setScore(prev => ({
         perfect: prev.perfect + (type === 'perfect' ? 1 : 0),
         good: prev.good + (type === 'good' ? 1 : 0),
@@ -476,7 +490,7 @@ export function RhythmVisualizer({ audioRef }: Props) {
       if (progress >= 1.1 && !note.hit && !note.missed) {
         note.missed = true
         setScore(prev => ({ ...prev, miss: prev.miss + 1, combo: 0 }))
-        setHitEffects(prev => [...prev, { lane: note.lane, time: t, type: 'miss' }])
+        setHitEffects(prev => [...prev.slice(-9), { lane: note.lane, time: t, type: 'miss' }])
       }
       if (progress > 1.25) notes.splice(i, 1)
     }
@@ -507,8 +521,8 @@ export function RhythmVisualizer({ audioRef }: Props) {
           dummy.updateMatrix()
           inst.setMatrixAt(i, dummy.matrix)
           inst.setColorAt(i, note.hit
-            ? new THREE.Color(0.4, 0.4, 0.4)
-            : laneColors[note.lane]
+            ? scratchColor.setRGB(0.4, 0.4, 0.4)
+            : scratchColor.copy(laneColors[note.lane])
           )
         } else {
           dummy.position.set(0, 999, 0)
