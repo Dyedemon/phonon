@@ -122,11 +122,11 @@ export default function Depth3DPage({
     applyLevel(next)
   }, [applyLevel])
 
-  // 切换质量预设时重置，给新预设一个干净的起点
+  // 切换质量预设或主题时重置——两主题负载差异巨大（星云重、节奏轻），调节器学到的降级档位不能跨主题携带
   useEffect(() => {
     applyLevel(0)
     lastDownRef.current = 0
-  }, [sceneSettings.quality, applyLevel])
+  }, [sceneSettings.quality, sceneSettings.theme, applyLevel])
 
   const DPR_STEPS = [1, 0.8, 0.6, 0.45]
   const dprScale = DPR_STEPS[level]
