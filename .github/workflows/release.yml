@@ -327,6 +327,7 @@ jobs:
             target/release/bundle/dmg/*.dmg
             target/release/bundle/macos/*.app/**
             target/release/bundle/macos/*.pkg
+            target/release/bundle/macos/*.app.tar.gz
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/appimage/*.AppImage.zsync
@@ -335,6 +336,7 @@ jobs:
             target/*/release/bundle/dmg/*.dmg
             target/*/release/bundle/macos/*.app/**
             target/*/release/bundle/macos/*.pkg
+            target/*/release/bundle/macos/*.app.tar.gz
             target/*/release/bundle/deb/*.deb
             target/*/release/bundle/appimage/*.AppImage
             target/*/release/bundle/appimage/*.AppImage.zsync
@@ -366,7 +368,7 @@ jobs:
               ForEach-Object { Join-Path $_.FullName 'release/bundle' } |
               Where-Object { Test-Path $_ })
           $files = $bundleDirs | ForEach-Object { Get-ChildItem $_ -Recurse -File } |
-            Where-Object { $_.Extension -in '.msi','.exe','.dmg','.pkg','.deb','.AppImage','.zsync' }
+            Where-Object { $_.Extension -in '.msi','.exe','.dmg','.pkg','.deb','.AppImage','.zsync','.gz' -or $_.Name -like '*.app.tar.gz' }
           foreach ($f in $files) {
             $hash = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
             "$hash  $($f.Name)" | Add-Content "$outDir/SHA256SUMS-${{ matrix.platform }}"
@@ -643,8 +645,9 @@ jobs:
           }
 
           Add-Platform "windows-x86_64" "nsis.exe" ".sig"
-          Add-Platform "darwin-x86_64"  "dmg"      ".sig"
-          Add-Platform "darwin-aarch64" "dmg"      ".sig"
+          # darwin updater 下载格式是 .app.tar.gz（dmg 不能增量更新）
+          Add-Platform "darwin-x86_64"  "app.tar.gz" ".sig"
+          Add-Platform "darwin-aarch64" "app.tar.gz" ".sig"
           Add-Platform "linux-x86_64"   "AppImage" ".sig"
           Add-Platform "linux-x86_64-deb" "deb"    ".sig"
 
