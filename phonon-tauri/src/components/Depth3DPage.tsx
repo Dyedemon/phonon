@@ -410,19 +410,27 @@ function CameraRig({ audioRef, theme }: {
     if (introTRef.current >= 1 && controls) (controls as any).enabled = true
   })
 
-  // 主题切换时重置相机位置
+  // 主题切换时重置相机位置。若开场运镜尚未完成：不直接落位（会被运镜
+  // 每帧覆盖、且控制器重启用路径被绕过——轨道控制会永久禁用），而是
+  // 改滑向新主题的默认机位，从当前位置继续
   useEffect(() => {
     if (prevThemeRef.current !== theme) {
       prevThemeRef.current = theme
-      if (theme === 'rhythm') {
-        // 节奏模式：低角度俯视，聚焦判定线附近
-        camera.position.set(0, 3.2, 6)
-        targetBaseRef.current.set(0, 0.2, 0)
+      const end = new THREE.Vector3(
+        0,
+        theme === 'rhythm' ? 3.2 : 3.8,
+        theme === 'rhythm' ? 6 : 12.5,
+      )
+      const look = new THREE.Vector3(0, theme === 'rhythm' ? 0.2 : -0.5, 0)
+      targetBaseRef.current.set(look.x, look.y, look.z)
+      if (introTRef.current < 1) {
+        introFromRef.current.copy(camera.position)
+        introEndRef.current.copy(end)
+        introLookRef.current.copy(look)
       } else {
-        // 星云模式：默认视角（~19° 俯角，环带呈土星式椭圆）
-        camera.position.set(0, 3.8, 12.5)
-        targetBaseRef.current.set(0, -0.5, 0)
+        camera.position.copy(end)
       }
+      camera.lookAt(look)
       if (controls) {
         const c = controls as any
         if (c.target) c.target.copy(targetBaseRef.current)
