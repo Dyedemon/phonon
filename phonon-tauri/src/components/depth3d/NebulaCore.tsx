@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
+import { bakePlanetMaps, NOISE_UTILS, ALBEDO_PLACEHOLDER, CLOUD_PLACEHOLDER } from './planetBake'
 import { featuresStaleMs } from './audioBridge'
 import type { SmoothedAudioData } from './audioBridge'
 
@@ -22,48 +23,6 @@ function qualityPreset(quality?: string) {
   }
 }
 
-// 通用噪声工具函数（字符串形式，便于 shader 内拼接）
-const NOISE_UTILS = /* glsl */`
-  float hash(vec3 p) {
-    p = fract(p * 0.3183099 + 0.1);
-    p *= 17.0;
-    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-  }
-  float noise(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(
-      mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
-          mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-      mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-          mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
-  }
-  float fbm(vec3 p, int oct) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 8; i++) {
-      if (i >= oct) break;
-      v += a * noise(p);
-      p = p * 2.05 + vec3(1.7, 9.2, 3.3);
-      a *= 0.5;
-    }
-    return v;
-  }
-  float ridge(vec3 p, int oct) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 6; i++) {
-      if (i >= oct) break;
-      float n = noise(p);
-      v += a * abs(n * 2.0 - 1.0);
-      p = p * 2.1 + vec3(5.3, 1.1, 7.7);
-      a *= 0.55;
-    }
-    return v;
-  }
-`
-
 // 星云主题：行星自转 + 双卫星 + 单环带 + 星云粒子环
 export function NebulaCore({ audioRef, quality }: Props) {
   const groupRef = useRef<THREE.Group>(null)
@@ -76,6 +35,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const ringRef = useRef<THREE.Points>(null)
 
   const q = qualityPreset(quality)
+  const gl = useThree((s) => s.gl)
 
   const lowSmRef = useRef(0)
   const rmsSmRef = useRef(0)
@@ -89,15 +49,17 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const orbitSpeedRef = useRef(0) // 星云粒子环公转速度：向目标平滑加减速
   const orbitPhaseRef = useRef(0) // 公转相位：逐帧累积，速度变化时位置连续不跳变
 
-  // ─── 行星表面 shader ─── 分层地形 + 海洋高光 + 黄昏带 + 极光 + 火山 + 城市光
-  // （噪声八度已按性能预算削减；"云影"目前是标量近似，真采样待烘焙包）
+  // ─── 行星表面 shader（烘焙版） ─── 反照率/夜面发光来自烘焙纹理；
+  // 运行时只做光照、极光（瘦身）、海面高光、环影与移动云影——
+  // 每像素噪声成本从 ~30 八度降到 ~3（烘焙时八度加倍，细节免费提升）
   const planetMat = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uLow: { value: 0 },
       uHigh: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
-      uCloudShadow: { value: 0 },
+      uAlbedo: { value: ALBEDO_PLACEHOLDER },
+      uCloudTex: { value: CLOUD_PLACEHOLDER },
     },
     vertexShader: /* glsl */`
       varying vec3 vNormal;
@@ -112,72 +74,28 @@ export function NebulaCore({ audioRef, quality }: Props) {
       }
     `,
     fragmentShader: /* glsl */`
+      uniform sampler2D uAlbedo;
+      uniform sampler2D uCloudTex;
       uniform float uTime;
       uniform float uLow;
       uniform float uHigh;
       uniform vec3 uLightDir;
-      uniform float uCloudShadow;
       varying vec3 vNormal;
       varying vec3 vPos;
       varying vec3 vWorldPos;
 
-      ${NOISE_UTILS}
+      \${NOISE_UTILS}
 
       void main() {
-        vec3 p = normalize(vPos);
+        vec3 dir = normalize(vPos);
+        // 等距圆柱 UV：与烘焙贴图的展开映射互为逆变换
+        vec2 uvE = vec2(atan(dir.z, dir.x) / 6.28318530718 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) / 3.14159265359 + 0.5);
+        vec4 alb = texture2D(uAlbedo, uvE);
+        // 云 + 海洋掩码（漂移速率 = 云层自转差 + 纹理独立漂移）
+        vec2 cmUv = vec2(uvE.x + uTime * 0.0104, uvE.y);
+        vec2 cm = texture2D(uCloudTex, fract(cmUv)).rg;
+        float isOcean = cm.g;
 
-        // ── 地形高度（fbm + 山脊 + 细节） ──
-        // 八度数经过性能预算削减：原始版本每像素 33+ 次 fbm，
-        // 在 4K/dpr2 下帧时间超出 WebView2 合成容忍度 → 间歇输出
-        // 纯黑帧（整窗闪屏）。削减八度后观感差异很小，帧率恢复正常。
-        // （DoF 删除后预算宽松，山脉/城市各恢复一档 octave）
-        float continents = fbm(p * 1.2, 4) * 0.9;
-        float mountains = ridge(p * 3.0, 4) * 0.5;
-        float hills = fbm(p * 6.0, 3) * 0.25;
-        float microDetail = fbm(p * 18.0, 2) * 0.08;
-        // 注意：GLSL 不允许在初始化表达式中引用正在声明的变量。
-        // 旧代码在 height 的初始化里引用了 height 自身（height * 0.0 + ...），
-        // 导致整个片元着色器编译失败，星球退化成默认材质。
-        float height = continents
-          + mountains * smoothstep(0.42, 0.58, continents)
-          + hills * smoothstep(0.5, 0.65, continents)
-          + microDetail;
-
-        // 海岸线精细度
-        float coast = fbm(p * 8.0, 2) * 0.06;
-        height += coast * smoothstep(0.44, 0.52, height);
-
-        // ── 分层配色（10 层地形） ──
-        vec3 deepOcean    = vec3(0.012, 0.03, 0.12);
-        vec3 ocean        = vec3(0.03, 0.07, 0.25);
-        vec3 shallowSea   = vec3(0.07, 0.14, 0.38);
-        vec3 beach        = vec3(0.28, 0.25, 0.5);
-        vec3 lowland      = vec3(0.16, 0.09, 0.28);
-        vec3 forest       = vec3(0.12, 0.22, 0.18);
-        vec3 highland     = vec3(0.32, 0.18, 0.48);
-        vec3 mountain     = vec3(0.48, 0.33, 0.62);
-        vec3 highMountain = vec3(0.6, 0.5, 0.72);
-        vec3 snow         = vec3(0.62, 0.68, 0.82);
-
-        vec3 col = deepOcean;
-        col = mix(col, ocean,        smoothstep(0.33, 0.40, height));
-        col = mix(col, shallowSea,   smoothstep(0.40, 0.45, height));
-        col = mix(col, beach,        smoothstep(0.45, 0.475, height));
-        col = mix(col, lowland,      smoothstep(0.475, 0.53, height));
-        col = mix(col, forest,       smoothstep(0.53, 0.60, height) * 0.6);
-        col = mix(col, highland,     smoothstep(0.58, 0.70, height));
-        col = mix(col, mountain,     smoothstep(0.72, 0.82, height));
-        col = mix(col, highMountain, smoothstep(0.80, 0.88, height));
-        col = mix(col, snow,         smoothstep(0.86, 0.93, height));
-
-        // 极地冰盖（随纬度变化，边缘有渐变）
-        float polar = smoothstep(0.55, 0.88, abs(p.y));
-        float polarEdge = smoothstep(0.55, 0.7, abs(p.y)) - smoothstep(0.75, 0.88, abs(p.y));
-        col = mix(col, snow * 0.82, polar * 0.6);
-        // 极地冰盖边缘的苔原色
-        col = mix(col, vec3(0.3, 0.35, 0.45), polarEdge * smoothstep(0.48, 0.55, height) * 0.4);
-
-        // ── 光照计算 ──
         vec3 N = normalize(vNormal);
         float NdotL = dot(N, uLightDir);
         float lit = smoothstep(-0.15, 0.4, NdotL);
@@ -189,67 +107,52 @@ export function NebulaCore({ audioRef, quality }: Props) {
         vec3 sunset2 = vec3(0.9, 0.25, 0.5);
         vec3 sunset = mix(sunset2, sunset1, terminator) * terminator * 0.45;
 
-        // ── 海洋镜面反射 ──
-        float isOcean = 1.0 - smoothstep(0.44, 0.47, height);
+        // 海洋镜面反射（掩码来自烘焙）
         vec3 viewDir = normalize(cameraPosition - vWorldPos);
         vec3 halfVec = normalize(uLightDir + viewDir);
         float spec = pow(max(0.0, dot(N, halfVec)), 64.0);
-        // 海浪微表面扰动高光
-        float waveN = fbm(p * 25.0 + vec3(uTime * 0.02, 0, uTime * 0.015), 2);
+        float waveN = fbm(dir * 25.0 + vec3(uTime * 0.02, 0, uTime * 0.015), 2);
         float specMask = spec * isOcean * lit * (0.6 + waveN * 0.4);
         vec3 oceanSpec = vec3(0.9, 0.95, 1.0) * specMask * 0.8;
 
-        // ── 极光（夜面高纬度） ──
-        float auroraLat = smoothstep(0.5, 0.8, abs(p.y));
-        float auroraBand = sin(p.y * 12.0 + uTime * 0.3) * 0.5 + 0.5;
-        float auroraN = fbm(p * 6.0 + vec3(0, uTime * 0.1, 0), 3);
-        // 极光亮度跟高频（镲片/气声点亮夜面极光带）
+        // 极光（夜面高纬度，瘦身：单八度噪声 + 复用）
+        float auroraLat = smoothstep(0.5, 0.8, abs(dir.y));
+        float auroraBand = sin(dir.y * 12.0 + uTime * 0.3) * 0.5 + 0.5;
+        float auroraN = fbm(dir * 6.0 + vec3(0, uTime * 0.1, 0), 1);
         float aurora = auroraLat * auroraBand * auroraN * (1.0 - halfLit) * (0.55 + uHigh * 2.0) * 0.6;
-        vec3 auroraCol1 = vec3(0.2, 1.0, 0.5);
-        vec3 auroraCol2 = vec3(0.4, 0.6, 1.0);
-        vec3 auroraCol3 = vec3(0.8, 0.3, 1.0);
-        float auroraMix = fbm(p * 4.0 + vec3(uTime * 0.05), 3);
-        vec3 auroraColor = mix(mix(auroraCol1, auroraCol2, auroraMix), auroraCol3, auroraMix * 0.3);
+        vec3 auroraColor = mix(vec3(0.2, 1.0, 0.5), vec3(0.4, 0.6, 1.0), auroraN);
         vec3 auroraGlow = auroraColor * aurora * 0.5;
 
-        // ── 火山热点（山脉区域，夜面可见） ──
-        float volcanoMask = smoothstep(0.72, 0.8, height) * ridge(p * 5.0, 3) * 0.5;
-        float volcanoN = fbm(p * 15.0, 2);
-        float volcanoes = smoothstep(0.65, 0.78, volcanoN) * volcanoMask;
-        vec3 volcanoGlow = vec3(1.0, 0.35, 0.08) * volcanoes * (1.0 - lit) * 0.4;
+        // 环带投影：几何对齐时的细暗弧（环带 6.5~8.55）
+        vec3 pg = vWorldPos + vec3(0.0, 0.5, 0.0);
+        float tR = -pg.y / uLightDir.y;
+        float ringShadow = 0.0;
+        if (tR > 0.0) {
+          vec3 cR = pg + uLightDir * tR;
+          float rc = length(cR.xz);
+          ringShadow = smoothstep(6.3, 7.0, rc) * (1.0 - smoothstep(7.9, 8.9, rc)) * 0.55;
+        }
+        float litShaded = lit * (1.0 - ringShadow);
 
-        // ── 夜面城市光 ──
-        float cityN = fbm(p * 22.0, 4);
-        float cities = smoothstep(0.68, 0.74, cityN) * (1.0 - halfLit);
-        cities *= smoothstep(0.48, 0.58, height);
-        // 大城市中心更亮
-        float cityCenters = smoothstep(0.75, 0.82, cityN) * smoothstep(0.52, 0.62, height);
-        vec3 cityGlow = vec3(1.0, 0.72, 0.3) * cities * 0.22;
-        cityGlow += vec3(1.0, 0.85, 0.5) * cityCenters * 0.15 * (1.0 - halfLit);
+        // 真移动云影：云密度作为遮光量（随漂移移动）
+        float cloudShadow = 1.0 - smoothstep(0.35, 0.85, cm.r) * 0.32 * lit;
 
-        // ── 云层阴影（投射到地面） ──
-        float shadow = 1.0 - uCloudShadow * 0.25 * lit;
-
-        // 环境光（夜面也有微弱光）
         float ambient = 0.07 + uLow * 0.05;
 
-        // 最终颜色合成
-        vec3 finalCol = col * (ambient + lit * 0.93) * shadow;
-        finalCol += oceanSpec;           // 海洋高光
-        finalCol += sunset * isOcean * 0.6; // 黄昏海面反光
-        finalCol += cityGlow;            // 城市灯光
-        finalCol += auroraGlow;          // 极光
-        finalCol += volcanoGlow;         // 火山
-
-        // 低频发光（音乐律动）——与大气/环带的反应同一档感知度
-        finalCol += col * uLow * 0.35;
+        vec3 finalCol = alb.rgb * (ambient + litShaded * 0.93) * cloudShadow;
+        finalCol += oceanSpec;
+        finalCol += sunset * isOcean * 0.6;
+        // 夜面发光（城市/火山——烘焙 a 通道，暖色）
+        finalCol += vec3(1.0, 0.62, 0.25) * alb.a * (1.0 - halfLit) * 0.85;
+        finalCol += auroraGlow;
+        finalCol += alb.rgb * uLow * 0.35;
 
         gl_FragColor = vec4(finalCol, 1.0);
       }
     `,
   }), [])
 
-  // ─── 云层 shader ─── 三层云 + 阴影采样 + 更精细结构
+  // ─── 云层 shader（烘焙版） ─── 密度来自烘焙纹理 + 独立慢漂移
   const cloudLayerMat = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -257,6 +160,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       uTime: { value: 0 },
       uLow: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
+      uCloudTex: { value: CLOUD_PLACEHOLDER },
     },
     vertexShader: /* glsl */`
       varying vec3 vNormal;
@@ -268,52 +172,30 @@ export function NebulaCore({ audioRef, quality }: Props) {
       }
     `,
     fragmentShader: /* glsl */`
+      uniform sampler2D uCloudTex;
       uniform float uTime;
       uniform float uLow;
       uniform vec3 uLightDir;
       varying vec3 vNormal;
       varying vec3 vPos;
-
-      ${NOISE_UTILS}
-
-      // 云的密度函数
-      float cloudDensity(vec3 p) {
-        // 主云系
-        float c1 = fbm(p * 2.2 + vec3(uTime * 0.035, 0.0, 0.0), 4);
-        // 碎云
-        float c2 = fbm(p * 5.0 + vec3(-uTime * 0.07, uTime * 0.015, uTime * 0.02), 3) * 0.5;
-        // 微结构
-        float c3 = fbm(p * 12.0, 2) * 0.2;
-        float c = c1 * 0.6 + c2 * 0.3 + c3 * 0.1;
-        // 云带分布（沿纬度有疏密变化）
-        float latBand = 0.7 + 0.3 * sin(p.y * 4.0 + 1.2);
-        return c * latBand;
-      }
-
       void main() {
         vec3 p = normalize(vPos);
-        float clouds = cloudDensity(p);
-        // 提高密度门槛：云成小块，地形透出来（整片白云糊住行星是被抱怨的"糊"之一）
-        float alpha = smoothstep(0.52, 0.75, clouds);
+        vec2 uvE = vec2(atan(p.z, p.x) / 6.28318530718 + 0.5, asin(clamp(p.y, -1.0, 1.0)) / 3.14159265359 + 0.5);
+        float density = texture2D(uCloudTex, vec2(uvE.x + uTime * 0.008, uvE.y)).r;
+        float alpha = smoothstep(0.52, 0.75, density);
 
-        // 光照：模拟云的体积感
         float NdotL = dot(normalize(vNormal), uLightDir);
         float lit = smoothstep(-0.1, 0.35, NdotL);
 
-        // 云的明暗过渡（边缘透光，底部暗）
         float cloudLight = 0.3 + lit * 0.7;
-        // 边缘加亮（silver lining）
-        float edge = smoothstep(0.48, 0.55, clouds) * (1.0 - smoothstep(0.65, 0.78, clouds));
+        float edge = smoothstep(0.48, 0.55, density) * (1.0 - smoothstep(0.65, 0.78, density));
         cloudLight += edge * lit * 0.35;
 
         vec3 cloudCol = vec3(0.92, 0.94, 1.0) * cloudLight;
-        // 黄昏染色
         float terminator = smoothstep(-0.05, 0.15, NdotL) * (1.0 - smoothstep(0.15, 0.45, NdotL));
         cloudCol = mix(cloudCol, vec3(1.0, 0.55, 0.25), terminator * 0.5);
-        // 极地偏冷色
         float polar = smoothstep(0.45, 0.85, abs(p.y));
         cloudCol = mix(cloudCol, vec3(0.72, 0.82, 1.0), polar * 0.35);
-        // 夜面云暗化
         cloudCol *= 0.4 + lit * 0.6;
 
         gl_FragColor = vec4(cloudCol, alpha * (0.3 + uLow * 0.35));
@@ -736,7 +618,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
     const pulse = beatPulseRef.current
 
     // 计算云阴影（极弱，避免行星表面闪烁）
-    const cloudShadow = low * 0.03 + rms * 0.02
+
 
     // 行星自转
     if (planetRef.current) {
@@ -745,16 +627,21 @@ export function NebulaCore({ audioRef, quality }: Props) {
       const scale = 1 + low * 0.035 + pulse * 0.045
       planetRef.current.scale.setScalar(scale)
       const mat = planetRef.current.material as THREE.ShaderMaterial
+      // 烘焙贴图：首次调用触发一次 GPU 烘焙并缓存（入场渐显掩盖）
+      const baked = bakePlanetMaps(gl)
+      mat.uniforms.uAlbedo.value = baked.albedo
+      mat.uniforms.uCloudTex.value = baked.cloud
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
       mat.uniforms.uHigh.value = hiSmRef.current
-      mat.uniforms.uCloudShadow.value = cloudShadow
+
     }
 
     // 云层
     if (cloudLayerRef.current) {
       cloudLayerRef.current.rotation.y = t * 0.055
       const mat = cloudLayerRef.current.material as THREE.ShaderMaterial
+      mat.uniforms.uCloudTex.value = bakePlanetMaps(gl).cloud
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
     }

@@ -637,9 +637,11 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [open, onClose])
 
-  // 设备 / DSP / 增强模式：面板打开时拉取一次（低频变化，不追事件）
+  // 设备 / DSP / 增强模式：延迟到设备 tab 激活时才拉取——设备枚举是
+  // 重操作，打开面板的瞬间执行会卡住首帧（用户反馈'用控制台卡一下'）。
+  // 低频变化，每次激活该 tab 时刷新一次足够
   useEffect(() => {
-    if (!open) return
+    if (!open || tab !== 'device') return
     invoke<DeviceInfo[]>('list_devices')
       .then(setDevices)
       .catch(() => {})
@@ -655,16 +657,16 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
     invoke<string>('get_surround_sound_mode')
       .then(setSurroundMode)
       .catch(() => {})
-  }, [open])
+  }, [open, tab])
 
-  // 队列：打开时拉取；面板开着期间曲目切换也要刷新，否则当前曲目高亮失准
+  // 队列：延迟到队列 tab 激活；面板开着期间曲目切换也要刷新，否则当前曲目高亮失准
   const currentTrackForQueue = playback?.current_track
   useEffect(() => {
-    if (!open) return
+    if (!open || tab !== 'queue') return
     invoke<QueueItem[]>('get_queue')
       .then(setQueue)
       .catch(() => {})
-  }, [open, currentTrackForQueue])
+  }, [open, tab, currentTrackForQueue])
 
   const handleSetDevice = (id: string) => {
     invoke('set_device', { deviceId: id })
