@@ -453,7 +453,8 @@ jobs:
             exit 0
           }
           $bundles = Get-ChildItem -Recurse gate-artifacts -File |
-            Where-Object { $_.Extension -in '.exe','.dmg','.pkg','.deb','.AppImage' -and $_.Name -notlike '*.sig' }
+            Where-Object { $_.Extension -in '.exe','.pkg','.deb','.AppImage' -and $_.Name -notlike '*.sig' }
+          # dmg 不需要 updater 签名：darwin 更新走 .app.tar.gz，dmg 是纯安装镜像
           $missing = @()
           foreach ($b in $bundles) {
             $sig = "$($b.FullName).sig"

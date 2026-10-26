@@ -108,7 +108,9 @@ jobs:
       - name: Bundle app (deb/AppImage/dmg)
         if: runner.os != 'Windows'
         working-directory: phonon-tauri
-        run: npx @tauri-apps/cli build --bundles ${{ runner.os == 'Linux' && 'deb,appimage' || 'app,dmg' }}
+        # CI 的 bundle 只供测试下载，不进更新通道——覆盖关闭 updater 产物，
+        # 否则 createUpdaterArtifacts 会要求 TAURI_SIGNING_PRIVATE_KEY。
+        run: npx @tauri-apps/cli build --bundles ${{ runner.os == 'Linux' && 'deb,appimage' || 'app,dmg' }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Upload bundles
         if: runner.os != 'Windows'
