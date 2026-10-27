@@ -371,7 +371,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
       // 与环带保持明显空隙（用户要求离球再远一点）
       const r = 17 + Math.pow(Math.random(), 0.6) * 5.5
       const angle = Math.random() * Math.PI * 2
-      const heightScale = (0.15 + Math.random() * 0.25) * (1 + (r - 17) * 0.06)
+      // 厚度加到 ~3 倍：边缘视角下是模糊带而不是一条 razor 线
+      const heightScale = (0.6 + Math.random() * 1.2) * (1 + (r - 17) * 0.06)
 
       positions[i * 3] = Math.cos(angle) * r
       positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale

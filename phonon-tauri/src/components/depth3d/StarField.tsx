@@ -278,6 +278,7 @@ export function StarField({ audioRef, quality }: Props) {
       uLen: { value: STREAM_LEN },
       uPerp: { value: STREAM_PERP },
       uBend: { value: 20 },
+      uBendY: { value: 7 },
     },
     vertexShader: /* glsl */`
       attribute float aT;
@@ -291,13 +292,16 @@ export function StarField({ audioRef, quality }: Props) {
       uniform float uLen;
       uniform vec3 uPerp;
       uniform float uBend;
+      uniform float uBendY;
       varying float vAlpha;
       void main() {
         // 沿轴流动：相位循环，粒子从近端流向远端（路径加长后放慢流速）
         float t = fract(aT + uTime * 0.03);
         // 弧形偏移：远端横向弯出（(t-0.5)^2 抛物线，近端几乎不动）
         vec3 pos = uOrigin + uDir * (t * uLen) + aOffset
-          + uPerp * ((t - 0.5) * (t - 0.5) * uBend);
+          + uPerp * ((t - 0.5) * (t - 0.5) * uBend)
+          // 垂直隆起：中段上拱，3D 弧在任何角度都不共面
+          + vec3(0.0, 1.0, 0.0) * (t * (1.0 - t) * 4.0) * uBendY;
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         float ps = size * uPixelRatio * 60.0 / -mvPosition.z;
         gl_PointSize = clamp(ps, 1.0, 8.0 * uPixelRatio);
