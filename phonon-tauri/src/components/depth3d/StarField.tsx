@@ -23,8 +23,8 @@ function qualityScale(quality?: string) {
 // （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
 // 星流端点：再推远一档（近端 |58|、远端 |115|——加法渲染无深度写入，
 // 超出银河球也能正常叠在背景上）
-const STREAM_A = new THREE.Vector3(-58, 5, 4)
-const STREAM_B = new THREE.Vector3(34, 46, -100)
+const STREAM_A = new THREE.Vector3(30, 28, -12)
+const STREAM_B = new THREE.Vector3(85, 60, -70)
 const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
 const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
 // 弧形的水平垂线方向：远端沿它横向弯出
