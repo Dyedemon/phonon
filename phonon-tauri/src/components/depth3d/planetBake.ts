@@ -158,6 +158,8 @@ let cache: PlanetBakedMaps | null = null
 /** 烘焙一次（每渲染器生命周期）；后续直接复用 */
 export function bakePlanetMaps(gl: THREE.WebGLRenderer): PlanetBakedMaps {
   if (cache) return cache
+  try {
+  ;(window as any).__bakeInfo = { stage: 'start' }
 
   const makeRT = (w: number, h: number) => {
     const rt = new THREE.WebGLRenderTarget(w, h, {
@@ -206,6 +208,8 @@ export function bakePlanetMaps(gl: THREE.WebGLRenderer): PlanetBakedMaps {
   clouds.mat.dispose()
   clouds.mesh.geometry.dispose()
 
+  ;(window as any).__bakeInfo = { stage: 'done', w: albedoRT.width, h: albedoRT.height }
+  ;(window as any).__bakeDebug = { albedoRT, cloudRT, gl }
   cache = {
     albedo: albedoRT.texture,
     cloud: cloudRT.texture,
@@ -216,6 +220,10 @@ export function bakePlanetMaps(gl: THREE.WebGLRenderer): PlanetBakedMaps {
     },
   }
   return cache
+  } catch (err: any) {
+    ;(window as any).__bakeInfo = { stage: 'error', message: String(err && err.message || err) }
+    throw err
+  }
 }
 
 // 烘焙完成前的占位纹理（1×1）：中性反照率 + 空云

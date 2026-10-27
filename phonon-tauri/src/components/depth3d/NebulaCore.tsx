@@ -84,7 +84,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       varying vec3 vPos;
       varying vec3 vWorldPos;
 
-      \${NOISE_UTILS}
+      ${NOISE_UTILS}
 
       void main() {
         vec3 dir = normalize(vPos);
@@ -631,6 +631,7 @@ export function NebulaCore({ audioRef, quality }: Props) {
       const baked = bakePlanetMaps(gl)
       mat.uniforms.uAlbedo.value = baked.albedo
       mat.uniforms.uCloudTex.value = baked.cloud
+      ;(window as any).__planetUniforms = mat.uniforms
       mat.uniforms.uTime.value = t
       mat.uniforms.uLow.value = low
       mat.uniforms.uHigh.value = hiSmRef.current
