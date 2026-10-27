@@ -145,6 +145,7 @@ export default function Depth3DPage({
       width: '100vw', height: '100vh',
       background: '#03050f',
       overflow: 'hidden', zIndex: 9999,
+    }}>
       {/* 临时构建标记（诊断运行版本，确认后删除） */}
       <div style={{
         position: 'absolute', left: 12, bottom: 10, zIndex: 10001,
@@ -153,7 +154,6 @@ export default function Depth3DPage({
       }}>
         B251005-3
       </div>
-    }}>
       {/* 3D 画布 */}
       <Canvas
         shadows
