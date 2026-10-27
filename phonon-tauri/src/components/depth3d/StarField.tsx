@@ -27,6 +27,8 @@ const STREAM_A = new THREE.Vector3(-58, 5, 4)
 const STREAM_B = new THREE.Vector3(34, 46, -100)
 const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
 const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
+// 弧形的水平垂线方向：远端沿它横向弯出
+const STREAM_PERP = new THREE.Vector3(-STREAM_DIR.z, 0, STREAM_DIR.x).normalize()
 
 export function StarField({ audioRef, quality }: Props) {
   const twinkleRef = useRef<THREE.Points>(null)
@@ -274,6 +276,8 @@ export function StarField({ audioRef, quality }: Props) {
       uOrigin: { value: STREAM_A },
       uDir: { value: STREAM_DIR },
       uLen: { value: STREAM_LEN },
+      uPerp: { value: STREAM_PERP },
+      uBend: { value: 20 },
     },
     vertexShader: /* glsl */`
       attribute float aT;
@@ -285,11 +289,15 @@ export function StarField({ audioRef, quality }: Props) {
       uniform vec3 uOrigin;
       uniform vec3 uDir;
       uniform float uLen;
+      uniform vec3 uPerp;
+      uniform float uBend;
       varying float vAlpha;
       void main() {
         // 沿轴流动：相位循环，粒子从近端流向远端（路径加长后放慢流速）
         float t = fract(aT + uTime * 0.03);
-        vec3 pos = uOrigin + uDir * (t * uLen) + aOffset;
+        // 弧形偏移：远端横向弯出（(t-0.5)^2 抛物线，近端几乎不动）
+        vec3 pos = uOrigin + uDir * (t * uLen) + aOffset
+          + uPerp * ((t - 0.5) * (t - 0.5) * uBend);
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         float ps = size * uPixelRatio * 60.0 / -mvPosition.z;
         gl_PointSize = clamp(ps, 1.0, 8.0 * uPixelRatio);
