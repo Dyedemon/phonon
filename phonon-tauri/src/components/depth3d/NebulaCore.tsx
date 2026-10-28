@@ -367,21 +367,20 @@ export function NebulaCore({ audioRef, quality }: Props) {
     const angles = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      // 半径分层：环带 mesh 到 8.55 为止，星云粒子占 17~22.5——
-      // 与环带保持明显空隙（用户要求离球再远一点）
+      // 球壳分布：粒子包裹行星各个方向（17~22.5）——扁平环带在边缘视角
+      // 会塌成穿过行星的线/带，球壳从任何角度看都是环绕的光晕
       const r = 17 + Math.pow(Math.random(), 0.6) * 5.5
-      const angle = Math.random() * Math.PI * 2
-      // 厚度加到 ~3 倍：边缘视角下是模糊带而不是一条 razor 线
-      const heightScale = (0.6 + Math.random() * 1.2) * (1 + (r - 17) * 0.06)
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
 
-      positions[i * 3] = Math.cos(angle) * r
-      positions[i * 3 + 1] = (Math.random() - 0.5) * heightScale
-      positions[i * 3 + 2] = Math.sin(angle) * r
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
+      positions[i * 3 + 2] = r * Math.cos(phi)
 
       sizes[i] = 0.12 + Math.random() * 0.26
       speeds[i] = 0.06 + Math.random() * 0.22
       radii[i] = r
-      angles[i] = angle
+      angles[i] = theta
 
       const hue = 0.82 - (r - 17) / 5.5 * 0.25
       const col = new THREE.Color().setHSL(hue, 0.65, 0.62)
