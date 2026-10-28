@@ -61,14 +61,14 @@ export function StarField({ audioRef, quality }: Props) {
         const az = Math.abs(((((u - 0.5) % 1) + 1.5) % 1) - 0.5)
         const azEnv = Math.exp(-(az * az) / (0.13 * 0.13))
         const by = ch * 0.42 + Math.sin(u * Math.PI * 2) * ch * 0.07
-        const dy = (y - by) / (ch * 0.058)
+        const dy = (y - by) / (ch * 0.042)
         let a = Math.exp(-dy * dy) * azEnv
         // 平滑伪噪声：整数周期正弦叠加（水平无缝），高频项给丝缕感
         const n1 = Math.sin(u * Math.PI * 2 * 3 + y * 0.11) * 0.5 + 0.5
         const n2 = Math.sin(u * Math.PI * 2 * 7 + y * 0.23 + 1.7) * 0.5 + 0.5
         const n3 = Math.sin(u * Math.PI * 2 * 13 + y * 0.05 + 4.2) * 0.5 + 0.5
         const n4 = Math.sin(u * Math.PI * 2 * 21 + y * 0.31 + 2.4) * 0.5 + 0.5
-        a *= 0.4 + 0.4 * n1 * n2 + 0.12 * n3 + 0.08 * n4
+        a *= (0.4 + 0.4 * n1 * n2 + 0.12 * n3 + 0.08 * n4) * 0.45
         // 尘埃暗纹（只落在带内）
         const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
         a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
