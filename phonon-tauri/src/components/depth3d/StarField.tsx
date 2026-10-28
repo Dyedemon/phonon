@@ -68,10 +68,10 @@ export function StarField({ audioRef, quality }: Props) {
         const n2 = Math.sin(u * Math.PI * 2 * 7 + y * 0.23 + 1.7) * 0.5 + 0.5
         const n3 = Math.sin(u * Math.PI * 2 * 13 + y * 0.05 + 4.2) * 0.5 + 0.5
         const n4 = Math.sin(u * Math.PI * 2 * 21 + y * 0.31 + 2.4) * 0.5 + 0.5
-        a *= (0.4 + 0.4 * n1 * n2 + 0.12 * n3 + 0.08 * n4) * 0.45
+        a *= (0.4 + 0.4 * n1 * n2 + 0.12 * n3 + 0.08 * n4) * 0.18
         // 尘埃暗纹（只落在带内）
         const dLane = (y - by - Math.sin(u * Math.PI * 2 * 2) * ch * 0.045) / (ch * 0.035)
-        a -= Math.exp(-dLane * dLane) * 0.5 * Math.exp(-dy * dy) * azEnv
+        a -= Math.exp(-dLane * dLane) * 0.22 * Math.exp(-dy * dy) * azEnv
         a = Math.max(0, Math.min(1, a))
         // 涂斑与云带取最大值合成（避免叠亮）；双层高斯 = 柔和光晕 + 亮核
         let sr = 0, sg = 0, sb = 0, sa = 0
