@@ -19,17 +19,8 @@ function qualityScale(quality?: string) {
   }
 }
 
-// 远景星空 — 银河底 + 亮星呼吸层 + 星流
+// 远景星空 — 银河底 + 亮星呼吸层
 // （原 750 颗静态小星层已整层删除——用户反馈"环绕的小星星太多"）
-// 星流端点：再推远一档（近端 |58|、远端 |115|——加法渲染无深度写入，
-// 超出银河球也能正常叠在背景上）
-const STREAM_A = new THREE.Vector3(30, 28, -12)
-const STREAM_B = new THREE.Vector3(85, 60, -70)
-const STREAM_DIR = new THREE.Vector3().subVectors(STREAM_B, STREAM_A).normalize()
-const STREAM_LEN = STREAM_A.distanceTo(STREAM_B)
-// 弧形的水平垂线方向：远端沿它横向弯出
-const STREAM_PERP = new THREE.Vector3(-STREAM_DIR.z, 0, STREAM_DIR.x).normalize()
-
 export function StarField({ audioRef, quality }: Props) {
   const twinkleRef = useRef<THREE.Points>(null)
   const hiSmRef = useRef(0)
@@ -220,108 +211,6 @@ export function StarField({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 星流：椭圆柱粒子流（用户要求以单一流代替碎星点/彗星） ───
-  // 锚定在高纬天空，轴向指向深空；粒子沿轴流向远处并循环，
-  // 两端淡入淡出（近端浮现、远端没入），不环绕不消失
-  const streamRef = useRef<THREE.Points>(null)
-  const streamGeo = useMemo(() => {
-    const N = 550
-    const dir = STREAM_DIR
-    const e1 = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
-    const e2 = new THREE.Vector3().crossVectors(dir, e1).normalize()
-    const origin = STREAM_A
-    const len = STREAM_LEN
-
-    const geo = new THREE.BufferGeometry()
-    const aT = new Float32Array(N)
-    const aOffset = new Float32Array(N * 3)
-    const positions = new Float32Array(N * 3) // 静态基准位（包围球用），实际位置由 shader 计算
-    const sizes = new Float32Array(N)
-    const alphas = new Float32Array(N)
-
-    for (let i = 0; i < N; i++) {
-      aT[i] = Math.random()
-      const th = Math.random() * Math.PI * 2
-      const rr = Math.sqrt(Math.random()) // 椭圆截面内均匀分布
-      const off = e1.clone().multiplyScalar(Math.cos(th) * rr * 6.0)
-        .add(e2.clone().multiplyScalar(Math.sin(th) * rr * 3.0))
-      aOffset[i * 3] = off.x
-      aOffset[i * 3 + 1] = off.y
-      aOffset[i * 3 + 2] = off.z
-      const base = origin.clone().add(dir.clone().multiplyScalar(aT[i] * len)).add(off)
-      positions[i * 3] = base.x
-      positions[i * 3 + 1] = base.y
-      positions[i * 3 + 2] = base.z
-      sizes[i] = 1.4 + Math.random() * 2.2
-      alphas[i] = 0.18 + Math.random() * 0.32
-    }
-
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geo.setAttribute('aT', new THREE.BufferAttribute(aT, 1))
-    geo.setAttribute('aOffset', new THREE.BufferAttribute(aOffset, 3))
-    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1))
-    return geo
-  }, [])
-
-  useEffect(() => () => { streamGeo.dispose() }, [streamGeo])
-
-  const streamMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      uOrigin: { value: STREAM_A },
-      uDir: { value: STREAM_DIR },
-      uLen: { value: STREAM_LEN },
-      uPerp: { value: STREAM_PERP },
-      uBend: { value: 20 },
-      uBendY: { value: 7 },
-    },
-    vertexShader: /* glsl */`
-      attribute float aT;
-      attribute vec3 aOffset;
-      attribute float size;
-      attribute float alpha;
-      uniform float uTime;
-      uniform float uPixelRatio;
-      uniform vec3 uOrigin;
-      uniform vec3 uDir;
-      uniform float uLen;
-      uniform vec3 uPerp;
-      uniform float uBend;
-      uniform float uBendY;
-      varying float vAlpha;
-      void main() {
-        // 沿轴流动：相位循环，粒子从近端流向远端（路径加长后放慢流速）
-        float t = fract(aT + uTime * 0.03);
-        // 弧形偏移：远端横向弯出（(t-0.5)^2 抛物线，近端几乎不动）
-        vec3 pos = uOrigin + uDir * (t * uLen) + aOffset
-          + uPerp * ((t - 0.5) * (t - 0.5) * uBend)
-          // 垂直隆起：中段上拱，3D 弧在任何角度都不共面
-          + vec3(0.0, 1.0, 0.0) * (t * (1.0 - t) * 4.0) * uBendY;
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        float ps = size * uPixelRatio * 60.0 / -mvPosition.z;
-        gl_PointSize = clamp(ps, 1.0, 8.0 * uPixelRatio);
-        // 近端浮现、远端没入深处
-        vAlpha = alpha * smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.72, 1.0, t));
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: /* glsl */`
-      varying float vAlpha;
-      void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float d = length(uv);
-        if (d > 0.5) discard;
-        float glow = smoothstep(0.5, 0.0, d);
-        gl_FragColor = vec4(vec3(0.75, 0.82, 1.0), pow(glow, 1.3) * vAlpha);
-      }
-    `,
-  }), [])
-
   useFrame(({ clock, viewport }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
@@ -333,13 +222,6 @@ export function StarField({ audioRef, quality }: Props) {
     // 粒子尺寸跟随画布实际 dpr（governor 降档时不突变）
     const dpr = viewport.dpr || 1
 
-    // 星流：粒子沿轴流向深处
-    if (streamRef.current) {
-      const m = streamRef.current.material as THREE.ShaderMaterial
-      m.uniforms.uTime.value = t
-    }
-
-    // 亮星呼吸层
     // 亮星呼吸层（静止——用户要求停掉环绕旋转）
     if (twinkleRef.current) {
       const mat = twinkleRef.current.material as THREE.ShaderMaterial
@@ -359,10 +241,6 @@ export function StarField({ audioRef, quality }: Props) {
       </mesh>
       <points ref={twinkleRef} geometry={twinkleGeo}>
         <primitive object={twinkleMat} attach="material" />
-      </points>
-      {/* 星流：椭圆柱粒子流，粒子沿轴流向深处并循环（不环绕） */}
-      <points ref={streamRef} geometry={streamGeo} frustumCulled={false}>
-        <primitive object={streamMat} attach="material" />
       </points>
     </group>
   )
