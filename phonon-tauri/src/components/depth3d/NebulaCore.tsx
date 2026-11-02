@@ -428,10 +428,10 @@ export function NebulaCore({ audioRef, quality }: Props) {
 
       void main() {
         vColor = color;
-        // 公转：角速率 = 每粒子固有速率 × uSpeed；全局启停已由 CPU 积分进
-        // uPhase（逐帧累积），这里不能再乘 uSpeed——否则 uPhase × uSpeed
-        // 的耦合会在起步/暂停坡道产生几十倍表观转速
-        float angSpeed = speed / sqrt(radius) * 1.0;
+        // 刚性自转：所有粒子同一角速度（0.04 rad/s，播放门控）。
+        // 若按 speed/sqrt(radius) 差速，球壳会在一两分钟内被剪切成
+        // 赤道圆盘，边缘视角就是一条穿过行星的虚线（用户截图实测）
+        float angSpeed = 0.04 * uSpeed;
         float currentAngle = angle + uPhase * angSpeed;
         // 原位微颤：幅度随 uSpeed 归零，暂停时完全冻结
         float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08 * uSpeed;
