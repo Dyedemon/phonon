@@ -621,21 +621,7 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
   const [surroundMode, setSurroundMode] = useState<string>('off')
   const [pendingQueueIndex, setPendingQueueIndex] = useState<number | null>(null)
 
-  // 点击面板外自动关闭：window 级 pointerdown，目标不在面板内即关闭。
-  // 开关按钮（右上角）除外——pointerdown 先关、click 又会把它点开
-  const panelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Element | null
-      if (panelRef.current && target && !panelRef.current.contains(target)
-        && !(target.closest && target.closest('[data-console-toggle]'))) {
-        onClose()
-      }
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    return () => window.removeEventListener('pointerdown', onPointerDown)
-  }, [open, onClose])
+
 
   // 设备 / DSP / 增强模式：延迟到设备 tab 激活时才拉取——设备枚举是
   // 重操作，打开面板的瞬间执行会卡住首帧（用户反馈'用控制台卡一下'）。
@@ -718,23 +704,8 @@ export function RightControlPanel({ open, onClose, onExit3D, playback, volume, o
 
   return (
     <>
-      {/* 遮罩 */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
-          backdropFilter: 'blur(6px)',
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? 'auto' : 'none',
-          transition: 'opacity 0.35s ease',
-          zIndex: 25,
-        }}
-      />
-
-      {/* 面板 */}
-      <div ref={panelRef} style={{
+      {/* 面板（停靠常驻，场景即控制台界面） */}
+      <div style={{
         position: 'absolute',
         top: 0,
         right: 0,
@@ -1578,7 +1549,8 @@ interface HUDProps {
 export function HUD({ playback, volume, onVolumeChange, onExit3D, sceneSettings, onSettingChange, loadLevel }: HUDProps) {
   const [cornersVisible, setCornersVisible] = useState(false)
   const [playBarVisible, setPlayBarVisible] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(false)
+  // 控制台即本页界面：默认停靠打开（用户要求场景即控制台）
+  const [panelOpen, setPanelOpen] = useState(true)
   const [sharedVol, setSharedVol] = useState(volume)
   const hideTimerRef = useRef<any>(null)
   const playBarHideTimerRef = useRef<any>(null)
