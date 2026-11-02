@@ -1151,6 +1151,15 @@ pub fn rename_playlist(
         }
     }
     drop(playlists);
+    // 文件夹绑定以歌单名为键——重命名不迁移的话绑定变孤儿：
+    // watcher 还在监控那个目录，但歌单按新名查不到绑定，folder-changed
+    // 重扫描会静默失效。
+    {
+        let mut synced = state.synced_folders.lock().map_err(|e| e.to_string())?;
+        if let Some(folder) = synced.remove(&old_name) {
+            synced.insert(new_name.clone(), folder);
+        }
+    }
     schedule_session_save(&app);
     Ok(())
 }
