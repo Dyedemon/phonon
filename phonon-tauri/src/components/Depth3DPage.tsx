@@ -1,6 +1,6 @@
-﻿// 三维成空 - 沉浸式 3D 音乐可视化
-// 场景五层结构：流体地面 + 频谱晶体环 + 能量核心 + 流场星尘 + 氛围雾
-// HUD：隐藏式交互，鼠标移动浮现四角按钮，底部 hover 呼出播放栏
+﻿// 三维承空 - 主界面形态的 3D 页
+// 场景 = 深空星野壁纸（无中心天体）+ 停靠控制台——像系统桌面：
+// 背景负责氛围（呼吸亮星/银河薄雾随音频起伏），控制台负责一切交互
 import { useRef, useState, useCallback, useEffect } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
@@ -9,7 +9,6 @@ import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocess
 import { BlendFunction } from 'postprocessing'
 import { useAudioDataRef } from './depth3d/audioBridge'
 import type { SmoothedAudioData } from './depth3d/audioBridge'
-import { NebulaCore } from './depth3d/NebulaCore'
 import { StarField } from './depth3d/StarField'
 import { RhythmVisualizer } from './depth3d/RhythmVisualizer'
 import { HUD } from './depth3d/HUD'
@@ -181,16 +180,12 @@ export default function Depth3DPage({
 
         {/* 灯光体系：整体偏暗，靠发光物体照亮场景 */}
         <ambientLight intensity={0.12} color="#4a5a8a" />
-        {/* 主光：从斜上方打，偏冷蓝色 */}
+        {/* 主光：从斜上方打，偏冷蓝色（星野材质是自绘 shader 不吃光，
+            灯光只服务于节奏主题的网格；无投影物，不开阴影） */}
         <directionalLight
           position={[8, 16, 10]}
           intensity={0.45}
           color={'#a8c0ff'}
-          castShadow
-          shadow-mapSize-width={1024}
-          shadow-mapSize-height={1024}
-          shadow-camera-near={0.5}
-          shadow-camera-far={50}
         />
         {/* 补光：下方反射光，偏紫 */}
         <pointLight position={[0, -2, 2]} intensity={0.35} color={'#8a6aff'} distance={30} decay={2} />
@@ -202,12 +197,11 @@ export default function Depth3DPage({
             离线/弱网时 fetch 失败并反复重试，导致整个 3D 页面重新挂载
             （表现为全窗闪烁）。场景的照明由上面的实体灯光承担。 */}
 
-        {/* 场景内容：按主题切换 */}
+        {/* 场景内容：按主题切换。星云主题即纯星野壁纸——中心天体
+            （行星/云/大气/环带）已整体退场（主界面形态），音频生命感
+            由 StarField 的呼吸亮星承担 */}
         {sceneSettings.theme === 'nebula' && (
-          <>
-            <StarField audioRef={audioRef} quality={sceneSettings.quality} />
-            <NebulaCore audioRef={audioRef} quality={sceneSettings.quality} />
-          </>
+          <StarField audioRef={audioRef} quality={sceneSettings.quality} />
         )}
 
         {sceneSettings.theme === 'rhythm' && (
@@ -216,7 +210,7 @@ export default function Depth3DPage({
           </>
         )}
 
-        {/* OrbitControls：自由视角（星云模式）——俯仰全开，绕中心点全方位观察 */}
+        {/* OrbitControls：自由视角（星云模式）——环视星空的视差拖动 */}
         {sceneSettings.theme === 'nebula' && (
           <OrbitControls
             enablePan={false}
@@ -252,7 +246,7 @@ export default function Depth3DPage({
             不上 DoF：全屏后处理里最贵的一项，且本场景 80% 的可见内容
             是远处星星——焦外亮星会被 bokeh 晕成软灰斑。
             MSAA 回归 ×4：DoF 删除后场景负载大减，预算买得起，
-            环带/行星轮廓的锯齿是最影响观感的画质项。超预算时
+            亮星轮廓的锯齿是最影响观感的画质项。超预算时
             FrameGovernor 逐级降分辨率。 */}
         {sceneSettings.postProcessing && (
           <EffectComposer multisampling={4} enableNormalPass={false}>
@@ -474,7 +468,7 @@ function CameraRig({ audioRef, theme }: {
     }
     // 星云模式：每帧不再触碰 OrbitControls——音频驱动的 target 抖动会和
     // 控制器的球坐标状态打架，俯仰全开后在极点附近表现为"视角莫名移动"。
-    // 场景的生命感由行星自转/呼吸、粒子转速与环带亮度承担（见 NebulaCore）。
+    // 星野的生命感由 StarField 的呼吸亮星/薄雾承担（壁纸式静观）。
   })
   return null
 }
