@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { bakePlanetMaps, NOISE_UTILS, ALBEDO_PLACEHOLDER, CLOUD_PLACEHOLDER } from './planetBake'
-import { featuresStaleMs } from './audioBridge'
 import type { SmoothedAudioData } from './audioBridge'
 
 interface Props {
@@ -15,24 +14,21 @@ const PLANET_RADIUS = 4.5
 
 function qualityPreset(quality?: string) {
   switch (quality) {
-    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24,  nebulaN: 1000, ringSeg: 128 }
-    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40,  nebulaN: 1800, ringSeg: 200 }
-    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96,  nebulaN: 3500, ringSeg: 480 }
+    case 'low':   return { planetSeg: 64,  cloudSeg: 48,  atmoSeg: 24, ringSeg: 128 }
+    case 'mid':   return { planetSeg: 128, cloudSeg: 80,  atmoSeg: 40, ringSeg: 200 }
+    case 'ultra': return { planetSeg: 256, cloudSeg: 192, atmoSeg: 96, ringSeg: 480 }
     case 'high':
-    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64,  nebulaN: 2500, ringSeg: 320 }
+    default:      return { planetSeg: 192, cloudSeg: 128, atmoSeg: 64, ringSeg: 320 }
   }
 }
 
-// 星云主题：行星自转 + 双卫星 + 单环带 + 星云粒子环
+// 星云主题：行星自转 + 单环带（无卫星/无粒子环——场景即控制台界面）
 export function NebulaCore({ audioRef, quality }: Props) {
   const groupRef = useRef<THREE.Group>(null)
   const planetRef = useRef<THREE.Mesh>(null)
   const cloudLayerRef = useRef<THREE.Mesh>(null)
   const atmoRef = useRef<THREE.Mesh>(null)
-  const moonRef = useRef<THREE.Mesh>(null)
-  const moon2Ref = useRef<THREE.Mesh>(null)
   const planetRingRef = useRef<THREE.Mesh>(null)
-  const ringRef = useRef<THREE.Points>(null)
 
   const q = qualityPreset(quality)
   const gl = useThree((s) => s.gl)
@@ -46,8 +42,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
   const startTimeRef = useRef(0)
   const initFadeRef = useRef(0) // 启动淡入：0→1，约 1.1 秒
   const ringWaveRef = useRef(1) // 环带节拍波进度：1 = 空闲，beat 时归 0
-  const orbitSpeedRef = useRef(0) // 星云粒子环公转速度：向目标平滑加减速
-  const orbitPhaseRef = useRef(0) // 公转相位：逐帧累积，速度变化时位置连续不跳变
 
   // ─── 行星表面 shader（烘焙版） ─── 反照率/夜面发光来自烘焙纹理；
   // 运行时只做光照、极光（瘦身）、海面高光、环影与移动云影——
@@ -251,338 +245,8 @@ export function NebulaCore({ audioRef, quality }: Props) {
     `,
   }), [])
 
-  // ─── 行星环（单一环带） ───
-  // 用户要求"一个环，不要两三层叠加"：A/B/C 三环带 + 卡西尼缝结构已砍，
-  // 现在是一条连续带面（软边 + 径向条纹 + 周向结构），随低频微亮、节拍轻闪。
-  const ringMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    uniforms: {
-      uTime: { value: 0 },
-      uLow: { value: 0 },
-      uPulse: { value: 0 },
-      uWave: { value: 1 },
-      uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
-    },
-    vertexShader: /* glsl */`
-      varying vec2 vUv;
-      varying vec3 vPos;
-      void main() {
-        vUv = uv;
-        vPos = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform float uTime;
-      uniform float uLow;
-      uniform float uPulse;
-      uniform float uWave;
-      uniform vec3 uLightDir;
-      varying vec2 vUv;
-      varying vec3 vPos;
 
-      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float noise(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),
-                   mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
-      }
-      float fbm2(vec2 p) {
-        float v = 0.0;
-        float a = 0.5;
-        for (int i = 0; i < 5; i++) {
-          v += a * noise(p);
-          p = p * 2.1 + vec2(3.7, 1.9);
-          a *= 0.5;
-        }
-        return v;
-      }
-
-      void main() {
-        vec2 center = vUv - 0.5;
-        float r = length(center) * 2.0;
-        float angle = atan(center.y, center.x);
-
-        // 单一环带：几何为 1.45R~1.9R（归一化 r ≈ 0.763~1.0），窄带软边
-        float band = smoothstep(0.755, 0.80, r) * (1.0 - smoothstep(0.90, 1.0, r));
-
-        // 纹理：径向条纹 + 周向结构。
-        // 角度必须周期化采样：atan 在 ±π 处跳变 2π，直接乘频率会让噪声
-        // 在跳变处完全不连续，环面上留下一根贯穿的接缝亮线。
-        vec2 ap = vec2(cos(angle), sin(angle));
-        float radialN = fbm2(vec2(r * 40.0 + uTime * 0.4, (ap.x + ap.y) * 2.0));
-        float angN = fbm2(ap * 6.0 + vec2(r * 3.0, -uTime * 0.25));
-        float tex = radialN * 0.55 + angN * 0.45;
-
-        // 颜色：内缘蓝紫 → 外缘冰蓝，越靠外越淡
-        float t = clamp((r - 0.763) / 0.237, 0.0, 1.0);
-        vec3 col = mix(vec3(0.5, 0.5, 1.0), vec3(0.65, 0.75, 1.0), t);
-
-        // 环的光照（朝向光的一侧更亮）
-        float lightAngle = dot(vec2(cos(angle), sin(angle)), uLightDir.xz);
-        float ringLight = 0.6 + 0.4 * max(0.0, lightAngle);
-
-        // 行星投影：从环片元沿光源方向的射线是否穿过行星球（组空间解析）。
-        // 环倾角极小，局部坐标近似组空间；行星心在组原点、半径 4.5。
-        // 这是土星照片最具辨识度的特征——背光侧的暗楔
-        float pL = dot(vPos, uLightDir);
-        float d2 = dot(vPos, vPos) - pL * pL;
-        float shadowAmt = (pL < 0.0 && d2 < 20.25)
-          ? 1.0 - smoothstep(18.0, 23.0, d2)
-          : 0.0;
-        ringLight *= mix(1.0, 0.12, shadowAmt);
-
-        float profile = 1.0 - t * 0.35;
-
-        // 节拍波：beat 触发（JS 置 uWave=0），亮环从内缘向外缘传播 ~1.2s，
-        // 走完时平滑熄灭——打击感带方向，而不是整体一闪。
-        // 注意必须用 dw*dw 而不是 pow(dw, 2.0)：GLSL 的 pow 底数为负时
-        // 是未定义行为（部分驱动返回 NaN，波外侧整片花掉）
-        float waveR = mix(0.763, 1.0, uWave);
-        float dw = (r - waveR) * 22.0;
-        float wave = exp(-dw * dw) * (1.0 - smoothstep(0.85, 1.0, uWave));
-
-        // 低音下常亮部分会饱和，响应系数收着（用户反馈重复低音下效果差）
-        float alpha = band * tex * profile * ringLight * (0.3 + uLow * 0.2 + uPulse * 0.2)
-          + band * wave * 0.45;
-        gl_FragColor = vec4(col, alpha);
-      }
-    `,
-  }), [])
-
-  // ─── 星云粒子环 ───
-  const nebulaGeo = useMemo(() => {
-    const geo = new THREE.BufferGeometry()
-    const count = q.nebulaN
-    const positions = new Float32Array(count * 3)
-    const sizes = new Float32Array(count)
-    const colors = new Float32Array(count * 3)
-    const speeds = new Float32Array(count)
-    const radii = new Float32Array(count)
-    const angles = new Float32Array(count)
-
-    for (let i = 0; i < count; i++) {
-      // 球壳分布：粒子包裹行星各个方向（17~22.5）——扁平环带在边缘视角
-      // 会塌成穿过行星的线/带，球壳从任何角度看都是环绕的光晕
-      const r = 17 + Math.pow(Math.random(), 0.6) * 5.5
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta)
-      positions[i * 3 + 2] = r * Math.cos(phi)
-
-      sizes[i] = 0.12 + Math.random() * 0.26
-      speeds[i] = 0.06 + Math.random() * 0.22
-      radii[i] = r
-      angles[i] = theta
-
-      const hue = 0.82 - (r - 17) / 5.5 * 0.25
-      const col = new THREE.Color().setHSL(hue, 0.65, 0.62)
-      colors[i * 3] = col.r
-      colors[i * 3 + 1] = col.g
-      colors[i * 3 + 2] = col.b
-    }
-
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1))
-    geo.setAttribute('radius', new THREE.BufferAttribute(radii, 1))
-    geo.setAttribute('angle', new THREE.BufferAttribute(angles, 1))
-    return geo
-  }, [q.nebulaN])
-
-  const nebulaMat = useMemo(() => new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uIntensity: { value: 0.5 },
-      uLow: { value: 0 },
-      uSpeed: { value: 1 },
-      uPhase: { value: 0 },
-      uPulse: { value: 0 }, // 节拍闪光（仅提亮，不影响转速——转速无跳变）
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-    },
-    vertexShader: /* glsl */`
-      attribute float size;
-      attribute vec3 color;
-      attribute float speed;
-      attribute float radius;
-      attribute float angle;
-      uniform float uTime;
-      uniform float uIntensity;
-      uniform float uSpeed;
-      uniform float uPhase;
-      uniform float uPulse;
-      uniform float uPixelRatio;
-      varying vec3 vColor;
-      varying float vAlpha;
-
-      void main() {
-        vColor = color;
-        // 刚性自转：所有粒子同一角速度（0.04 rad/s，播放门控）。
-        // 若按 speed/sqrt(radius) 差速，球壳会在一两分钟内被剪切成
-        // 赤道圆盘，边缘视角就是一条穿过行星的虚线（用户截图实测）
-        float angSpeed = 0.04 * uSpeed;
-        float currentAngle = angle + uPhase * angSpeed;
-        // 原位微颤：幅度随 uSpeed 归零，暂停时完全冻结
-        float wobble = sin(uTime * speed * 1.3 + angle * 3.0) * 0.08 * uSpeed;
-        vec3 pos = vec3(
-          cos(currentAngle) * radius,
-          position.y + wobble,
-          sin(currentAngle) * radius
-        );
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        // 亚像素粒子是发糊的根因：最小点径 + 能量守恒调暗（与星层同方案）
-        float ps = size * uIntensity * 170.0 * uPixelRatio / -mvPosition.z;
-        float clamped = clamp(ps, 1.5, 10.0 * uPixelRatio);
-        gl_PointSize = clamped;
-        vAlpha = (uIntensity * (0.28 + speed * 0.35) + uPulse * 0.35) * min(ps / clamped, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: /* glsl */`
-      varying vec3 vColor;
-      varying float vAlpha;
-      void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float d = length(uv);
-        if (d > 0.5) discard;
-        float alpha = smoothstep(0.5, 0.05, d) * vAlpha;
-        gl_FragColor = vec4(vColor, alpha);
-      }
-    `,
-  }), [])
-
-  // ─── 卫星 1（主卫星，岩石质地，陨石坑） ───
-  const moonMat = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: {
-      uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
-    },
-    vertexShader: /* glsl */`
-      varying vec3 vNormal;
-      varying vec3 vPos;
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vPos = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform vec3 uLightDir;
-      varying vec3 vNormal;
-      varying vec3 vPos;
-
-      ${NOISE_UTILS}
-
-      void main() {
-        vec3 p = normalize(vPos);
-
-        // 陨石坑：多层噪声形成圆形凹陷
-        float craterField = fbm(p * 6.0, 5);
-        float largeCraters = ridge(p * 3.0, 4) * 0.6;
-        float smallCraters = fbm(p * 15.0, 4) * 0.3;
-        float craters = largeCraters + smallCraters * smoothstep(0.4, 0.6, craterField);
-
-        // 高地 vs 平原
-        float highland = fbm(p * 2.0, 4);
-        float mare = 1.0 - smoothstep(0.45, 0.55, highland);
-
-        vec3 highlandCol = vec3(0.45, 0.42, 0.5);
-        vec3 mareCol = vec3(0.28, 0.26, 0.34);
-        vec3 col = mix(highlandCol, mareCol, mare * 0.7);
-
-        // 陨石坑边缘亮、底部暗
-        float craterEdge = smoothstep(0.5, 0.65, craters) - smoothstep(0.7, 0.85, craters);
-        float craterFloor = smoothstep(0.65, 0.8, craters);
-        col += craterEdge * 0.15;
-        col -= craterFloor * 0.1;
-
-        // 光照
-        float NdotL = dot(normalize(vNormal), uLightDir);
-        float lit = smoothstep(-0.2, 0.35, NdotL);
-
-        // 黄昏色
-        float terminator = smoothstep(-0.05, 0.15, NdotL) * (1.0 - smoothstep(0.15, 0.4, NdotL));
-        col = mix(col, vec3(0.8, 0.4, 0.2), terminator * 0.3);
-
-        vec3 finalCol = col * (0.12 + lit * 0.88);
-        gl_FragColor = vec4(finalCol, 1.0);
-      }
-    `,
-  }), [])
-
-  // ─── 卫星 2（冰卫星，更小更远） ───
-  const moon2Mat = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: {
-      uLightDir: { value: new THREE.Vector3(0.85, 0.2, 0.5).normalize() },
-    },
-    vertexShader: /* glsl */`
-      varying vec3 vNormal;
-      varying vec3 vPos;
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vPos = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform vec3 uLightDir;
-      varying vec3 vNormal;
-      varying vec3 vPos;
-
-      ${NOISE_UTILS}
-
-      void main() {
-        vec3 p = normalize(vPos);
-
-        // 冰面纹理：裂缝 + 冰丘
-        float ice = fbm(p * 5.0, 5);
-        float cracks = ridge(p * 8.0, 4) * 0.5;
-        float detail = fbm(p * 20.0, 4) * 0.2;
-        float surf = ice + cracks * 0.4 + detail;
-
-        vec3 iceWhite = vec3(0.85, 0.9, 0.98);
-        vec3 iceBlue = vec3(0.5, 0.65, 0.85);
-        vec3 deepIce = vec3(0.3, 0.4, 0.65);
-
-        vec3 col = mix(iceBlue, iceWhite, smoothstep(0.4, 0.6, surf));
-        col = mix(col, deepIce, smoothstep(0.7, 0.85, cracks));
-
-        // 极地更亮
-        float polar = smoothstep(0.5, 0.85, abs(p.y));
-        col = mix(col, iceWhite * 0.95, polar * 0.5);
-
-        // 光照
-        float NdotL = dot(normalize(vNormal), uLightDir);
-        float lit = smoothstep(-0.2, 0.35, NdotL);
-
-        // 冰面高光
-        vec3 viewDir = normalize(cameraPosition - vPos);
-        vec3 halfVec = normalize(uLightDir + viewDir);
-        float spec = pow(max(0.0, dot(normalize(vNormal), halfVec)), 32.0);
-        col += vec3(0.9, 0.95, 1.0) * spec * lit * 0.3;
-
-        vec3 finalCol = col * (0.15 + lit * 0.85);
-        gl_FragColor = vec4(finalCol, 1.0);
-      }
-    `,
-  }), [])
-
-  // 质量预设切换会重建几何体：主动 dispose 旧的，避免 GPU 缓冲滞留
-  useEffect(() => () => {
-    nebulaGeo.dispose()
-  }, [nebulaGeo])
-
-  useFrame(({ clock, viewport }, delta) => {
+  useFrame(({ clock }, delta) => {
     const d = audioRef.current
     const t = clock.elapsedTime
     // 记录启动时间
@@ -593,8 +257,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
     initFadeRef.current = Math.min(1, initFadeRef.current + delta * 0.9)
     const fade = initFadeRef.current
 
-    // 粒子尺寸跟随画布实际 dpr（governor 降档时不突变）
-    const dpr = viewport.dpr || 1
 
     lowSmRef.current = lerp(lowSmRef.current, d.lowFreqAvg * fade, 0.08)
     rmsSmRef.current = lerp(rmsSmRef.current, d.rms * fade, 0.06)
@@ -669,58 +331,6 @@ export function NebulaCore({ audioRef, quality }: Props) {
       mat.uniforms.uWave.value = ringWaveRef.current
     }
 
-    // 星云粒子环：与行星环 mesh 共面（0.12/0.03），只保留极小的呼吸摆动
-    if (ringRef.current) {
-      ringRef.current.rotation.x = 0.12 + Math.sin(t * 0.06) * 0.015
-      ringRef.current.rotation.z = 0.03 + Math.sin(t * 0.04) * 0.01
-      const mat = ringRef.current.material as THREE.ShaderMaterial
-      mat.uniforms.uTime.value = t
-      mat.uniforms.uIntensity.value = 0.35 + low * 0.3 + rms * 0.15 + pulse * 0.5
-      mat.uniforms.uLow.value = low
-      // 公转速度：播放时恒速（不随节拍/能量起伏——用户要求删除），
-      // 暂停/停止后缓缓减速直至静止。
-      // '在播放'判定：特征新鲜 且 能量未归零（静音帧会持续把能量拉回 0）
-      const playing = featuresStaleMs() < 600 && (d.lowFreqAvg > 0.01 || d.rms > 0.01)
-      const targetSpeed = playing ? 1.0 : 0
-      orbitSpeedRef.current = targetSpeed > orbitSpeedRef.current
-        ? Math.min(targetSpeed, orbitSpeedRef.current + delta * 1.2)
-        : Math.max(targetSpeed, orbitSpeedRef.current - delta * 0.6)
-      mat.uniforms.uSpeed.value = orbitSpeedRef.current
-      // 相位累积：位置 = 初始角 + 相位 × 角速度——转速变化时位置连续，
-      // 不会像 uTime × 变速那样在起步/暂停瞬间跳变（用户反馈的疯转）
-      orbitPhaseRef.current += delta * orbitSpeedRef.current
-      mat.uniforms.uPhase.value = orbitPhaseRef.current
-      mat.uniforms.uPulse.value = pulse
-      mat.uniforms.uPixelRatio.value = dpr
-    }
-
-    // 卫星1：绕行星公转（轨道 12.5 在环带外缘 8.55 之外、星云粒子带 14.8 之内）
-    if (moonRef.current) {
-      const moonDist = 12.5
-      const moonSpeed = 0.28
-      const moonAngle = t * moonSpeed
-      const moonY = Math.sin(t * 0.18) * 1.0
-      moonRef.current.position.set(
-        Math.cos(moonAngle) * moonDist,
-        moonY,
-        Math.sin(moonAngle) * moonDist
-      )
-      moonRef.current.rotation.y = t * 0.4
-    }
-
-    // 卫星2（冰卫星）：更远，倾斜轨道（与卫星1拉开距离）
-    if (moon2Ref.current) {
-      const moon2Dist = 15.0
-      const moon2Speed = 0.18
-      const moon2Angle = t * moon2Speed + 1.5
-      // 轨道面已在环系群组内对齐，这里只留一点自然偏角
-      const incline = 0.08
-      const moon2Y = Math.sin(moon2Angle) * moon2Dist * Math.sin(incline)
-      const moon2X = Math.cos(moon2Angle) * moon2Dist
-      const moon2Z = Math.sin(moon2Angle) * moon2Dist * Math.cos(incline)
-      moon2Ref.current.position.set(moon2X, moon2Y, moon2Z)
-      moon2Ref.current.rotation.y = t * 0.3
-    }
   })
 
   return (
@@ -737,37 +347,11 @@ export function NebulaCore({ audioRef, quality }: Props) {
         <primitive object={cloudLayerMat} attach="material" />
       </mesh>
 
-      {/* 星云粒子环 */}
-      <points ref={ringRef} geometry={nebulaGeo}>
-        <primitive object={nebulaMat} attach="material" />
-      </points>
-
-      {/* 行星环（单一环带）——1.45R~1.9R，倾角 0.12 */}
-      <mesh ref={planetRingRef} rotation={[0.12, 0, 0.03]}>
-        <ringGeometry args={[PLANET_RADIUS * 1.45, PLANET_RADIUS * 1.9, q.ringSeg]} />
-        <primitive object={ringMat} attach="material" />
-      </mesh>
-
       {/* 大气（内外辉光合一） */}
       <mesh ref={atmoRef}>
         <sphereGeometry args={[PLANET_RADIUS, q.atmoSeg, q.atmoSeg]} />
         <primitive object={atmoMat} attach="material" />
       </mesh>
-
-      {/* 卫星系统：与环系共面（倾角同行星环），卫星 2 保留 0.08 rad 自然偏角 */}
-      <group rotation={[0.12, 0, 0.03]}>
-        {/* 卫星1（岩石卫星） */}
-        <mesh ref={moonRef}>
-          <sphereGeometry args={[0.65, Math.floor(q.cloudSeg * 0.5), Math.floor(q.cloudSeg * 0.5)]} />
-          <primitive object={moonMat} attach="material" />
-        </mesh>
-
-        {/* 卫星2（冰卫星） */}
-        <mesh ref={moon2Ref}>
-          <sphereGeometry args={[0.35, Math.floor(q.cloudSeg * 0.4), Math.floor(q.cloudSeg * 0.4)]} />
-          <primitive object={moon2Mat} attach="material" />
-        </mesh>
-      </group>
     </group>
   )
 }
